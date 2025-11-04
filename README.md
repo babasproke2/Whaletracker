@@ -1,4 +1,4 @@
-WhaleTracker — README
+<img width="1920" height="919" alt="image" src="https://github.com/user-attachments/assets/14d1401e-1bc3-4fbf-985e-25d3a7cfa23a" />
 
 Overview
 
