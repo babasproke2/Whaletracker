@@ -163,14 +163,15 @@ function wt_fetch_log_players(array $logIds): array
 
     $placeholders = implode(',', array_fill(0, count($logIds), '?'));
     $sql = sprintf(
-        'SELECT log_id, steamid, personaname, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, total_ubers, playtime, medic_drops, uber_drops, airshots, shots, hits, best_streak, best_headshots_life, best_backstabs_life, best_score_life, best_kills_life, best_assists_life, best_ubers_life, '
-        . 'weapon1_name, weapon1_shots, weapon1_hits, weapon1_damage, weapon1_defindex, '
-        . 'weapon2_name, weapon2_shots, weapon2_hits, weapon2_damage, weapon2_defindex, '
-        . 'weapon3_name, weapon3_shots, weapon3_hits, weapon3_damage, weapon3_defindex, '
-        . 'airshots_soldier, airshots_soldier_height, airshots_demoman, airshots_demoman_height, airshots_sniper, airshots_sniper_height, airshots_medic, airshots_medic_height, '
-        . 'COALESCE(classes_mask, 0) AS classes_mask, is_admin, last_updated '
-        . 'FROM %s WHERE log_id IN (%s) ORDER BY kills DESC, assists DESC',
+        'SELECT lp.log_id, lp.steamid, lp.personaname, lp.kills, lp.deaths, lp.assists, lp.damage, lp.damage_taken, lp.healing, lp.headshots, lp.backstabs, lp.total_ubers, lp.playtime, lp.medic_drops, lp.uber_drops, lp.airshots, lp.shots, lp.hits, lp.best_streak, lp.best_headshots_life, lp.best_backstabs_life, lp.best_score_life, lp.best_kills_life, lp.best_assists_life, lp.best_ubers_life, '
+        . 'lp.weapon1_name, lp.weapon1_shots, lp.weapon1_hits, lp.weapon1_damage, lp.weapon1_defindex, '
+        . 'lp.weapon2_name, lp.weapon2_shots, lp.weapon2_hits, lp.weapon2_damage, lp.weapon2_defindex, '
+        . 'lp.weapon3_name, lp.weapon3_shots, lp.weapon3_hits, lp.weapon3_damage, lp.weapon3_defindex, '
+        . 'lp.airshots_soldier, lp.airshots_soldier_height, lp.airshots_demoman, lp.airshots_demoman_height, lp.airshots_sniper, lp.airshots_sniper_height, lp.airshots_medic, lp.airshots_medic_height, '
+        . 'COALESCE(lp.classes_mask, 0) AS classes_mask, lp.is_admin, lp.last_updated, wt.best_weapon AS lifetime_best_weapon, wt.best_weapon_accuracy AS lifetime_best_weapon_accuracy '
+        . 'FROM %s lp LEFT JOIN %s wt ON wt.steamid = lp.steamid WHERE lp.log_id IN (%s) ORDER BY lp.kills DESC, lp.assists DESC',
         wt_log_players_table(),
+        WT_DB_TABLE,
         $placeholders
     );
 
@@ -245,6 +246,37 @@ function wt_fetch_log_players(array $logIds): array
                 ];
             }
             $entry['weapon_summary'] = $weaponSummary;
+
+            $matchBestWeapon = null;
+            $matchBestAccuracy = null;
+            foreach ($weaponSummary as $weapon) {
+                if (!is_array($weapon)) {
+                    continue;
+                }
+                $acc = isset($weapon['accuracy']) ? (float)$weapon['accuracy'] : null;
+                if ($acc === null) {
+                    continue;
+                }
+                if ($matchBestAccuracy === null || $acc > $matchBestAccuracy) {
+                    $matchBestAccuracy = $acc;
+                    $matchBestWeapon = $weapon['name'] ?? null;
+                }
+            }
+
+            $lifetimeBestWeapon = isset($entry['lifetime_best_weapon']) ? (string)$entry['lifetime_best_weapon'] : '';
+            $lifetimeBestWeaponAccuracy = isset($entry['lifetime_best_weapon_accuracy']) && $entry['lifetime_best_weapon_accuracy'] !== null
+                ? ((float)$entry['lifetime_best_weapon_accuracy']) * 100.0
+                : null;
+
+            if ($matchBestAccuracy !== null) {
+                $entry['best_weapon'] = $matchBestWeapon ?: ($lifetimeBestWeapon ?: null);
+                $entry['best_weapon_accuracy'] = $matchBestAccuracy;
+            } else {
+                $entry['best_weapon'] = $lifetimeBestWeapon ?: null;
+                $entry['best_weapon_accuracy'] = $lifetimeBestWeaponAccuracy;
+            }
+
+            unset($entry['lifetime_best_weapon'], $entry['lifetime_best_weapon_accuracy']);
 
             $airshotsSummary = [];
             $airshotKeys = [
@@ -419,7 +451,7 @@ function wt_fetch_logs(int $limit = 20): array
     wt_refresh_current_log();
 
     $sql = sprintf(
-        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s ORDER BY started_at DESC LIMIT %d',
+        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s WHERE player_count > 0 ORDER BY started_at DESC LIMIT %d',
         wt_logs_table(),
         $limit
     );
@@ -439,6 +471,14 @@ function wt_fetch_logs(int $limit = 20): array
         $log['players'] = $playersByLog[$logId] ?? [];
     }
     unset($log);
+
+    $logs = array_values(array_filter($logs, static function ($log) {
+        $count = (int)($log['player_count'] ?? 0);
+        if ($count <= 0 && !empty($log['players']) && is_array($log['players'])) {
+            $count = count($log['players']);
+        }
+        return $count > 0;
+    }));
 
     return $logs;
 }
@@ -467,6 +507,56 @@ function wt_fetch_admin_flags(array $steamIds): array
     }
 
     return $flags;
+}
+
+function wt_fetch_performance_averages(): array
+{
+    static $cachedAverages = null;
+    if (is_array($cachedAverages)) {
+        return $cachedAverages;
+    }
+
+    $cacheKey = 'wt:performance:averages';
+    $cacheTtl = 86400;
+    $disableCache = isset($_GET['nocache']);
+    if (!$disableCache) {
+        $cached = wt_cache_get($cacheKey);
+        if (is_array($cached)) {
+            $cachedAverages = $cached;
+            return $cachedAverages;
+        }
+    }
+
+    $pdo = wt_pdo();
+    $sql = 'SELECT COUNT(*) AS eligible,
+                   AVG(CASE WHEN deaths > 0 THEN kills / NULLIF(deaths, 0) ELSE kills END) AS avg_kd,
+                   AVG(damage_dealt) AS avg_damage,
+                   AVG(airshots) AS avg_airshots,
+                   AVG(healing) AS avg_healing,
+                   AVG(CASE WHEN playtime > 0 THEN damage_dealt / (playtime / 60.0) END) AS avg_dpm,
+                   AVG(CASE WHEN shots > 0 THEN hits / shots END) AS avg_accuracy
+            FROM ' . WT_DB_TABLE . '
+            WHERE playtime >= 18000';
+
+    $stmt = $pdo->query($sql);
+    $row = $stmt ? ($stmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+
+    $averages = [
+        'eligible' => (int)($row['eligible'] ?? 0),
+        'kd' => (isset($row['avg_kd']) && $row['avg_kd'] !== null) ? (float)$row['avg_kd'] : 0.0,
+        'damage' => isset($row['avg_damage']) ? (float)$row['avg_damage'] : 0.0,
+        'airshots' => isset($row['avg_airshots']) ? (float)$row['avg_airshots'] : 0.0,
+        'healing' => isset($row['avg_healing']) ? (float)$row['avg_healing'] : 0.0,
+        'dpm' => isset($row['avg_dpm']) ? (float)$row['avg_dpm'] : 0.0,
+        'accuracy' => isset($row['avg_accuracy']) ? (float)$row['avg_accuracy'] * 100.0 : 0.0,
+    ];
+
+    if (!$disableCache) {
+        wt_cache_set($cacheKey, $averages, $cacheTtl);
+    }
+
+    $cachedAverages = $averages;
+    return $averages;
 }
 
 function wt_fetch_map_leaderboard(string $groupKey): array

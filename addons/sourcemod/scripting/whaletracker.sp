@@ -12,6 +12,16 @@
 #include <datapack>
 #include <adt_trie>
 
+stock bool CheckIfAfterburn(int damagecustom)
+{
+    return (damagecustom == TF_CUSTOM_BURNING || damagecustom == TF_CUSTOM_BURNING_FLARE);
+}
+
+stock bool CheckIfBleedDmg(int damageType)
+{
+    return (damageType & DMG_SLASH) != 0;
+}
+
 #define WT_CLASS_OFFSET 1
 #define WT_CLASS_COUNT 9
 #define WT_MAX_WEAPON_NAME 128
@@ -83,6 +93,7 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 17: strcopy(buffer, maxlen, "Syringe Gun");
         case 18: strcopy(buffer, maxlen, "Rocket Launcher");
         case 19: strcopy(buffer, maxlen, "Grenade Launcher");
+        case 1151: strcopy(buffer, maxlen, "Iron Bomber");
         case 20: strcopy(buffer, maxlen, "Stickybomb Launcher");
         case 21: strcopy(buffer, maxlen, "Flame Thrower");
         case 22, 23: strcopy(buffer, maxlen, "Pistol");
@@ -94,6 +105,7 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 41: strcopy(buffer, maxlen, "Natascha");
         case 44: strcopy(buffer, maxlen, "Sandman");
         case 45: strcopy(buffer, maxlen, "Force-A-Nature");
+        case 1103: strcopy(buffer, maxlen, "Back Scatter");
         case 56: strcopy(buffer, maxlen, "Huntsman");
         case 61: strcopy(buffer, maxlen, "Ambassador");
         case 127: strcopy(buffer, maxlen, "Direct Hit");
@@ -185,6 +197,7 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         default: strcopy(buffer, maxlen, "Unknown");
     }
 }
+
 #define STEAMID64_LEN 32
 #define MENU_TITLE "Whale Tracker Stats"
 #define DB_CONFIG_DEFAULT "default"
@@ -263,10 +276,12 @@ Database g_hDatabase = null;
 ConVar g_CvarDatabase = null;
 ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hEnabled = null;
+ConVar g_hServerTag = null;
 bool g_bDatabaseReady = false;
 bool g_bEnabled = true;
 
 char g_sEnabled[] = "sm_whaletracker_enabled";
+char g_sServerTag[32];
 
 enum MatchStatField
 {
@@ -549,10 +564,13 @@ public void ConVarChanged_Enabled(ConVar convar, const char[] oldValue, const ch
 
     if (g_bEnabled) {
         FinalizeCurrentMatch(false);
+        ResetMatchStorage();
         BeginMatchTracking();
     } else {
         FinalizeCurrentMatch(false);
         ClearOnlineStats();
+        ResetMatchStorage();
+        g_sCurrentLogId[0] = '\0';
     }
 }
 
@@ -1137,6 +1155,61 @@ static void ResetMatchStorage()
     }
 }
 
+static void WT_SanitizeServerTag(char[] tag, int maxlen)
+{
+    for (int i = 0; i < maxlen && tag[i] != '\0'; i++)
+    {
+        char c = tag[i];
+        if (c >= 'A' && c <= 'Z')
+        {
+            tag[i] = c + 32;
+            continue;
+        }
+        bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+        if (!allowed)
+        {
+            tag[i] = '_';
+        }
+    }
+}
+
+static void WT_UpdateServerTag()
+{
+    g_sServerTag[0] = '\0';
+
+    if (g_hServerTag != null)
+    {
+        g_hServerTag.GetString(g_sServerTag, sizeof(g_sServerTag));
+        TrimString(g_sServerTag);
+    }
+
+    if (!g_sServerTag[0])
+    {
+        ConVar hostPort = FindConVar("hostport");
+        if (hostPort != null)
+        {
+            int portVal = hostPort.IntValue;
+            if (portVal > 0)
+            {
+                Format(g_sServerTag, sizeof(g_sServerTag), "p%d", portVal);
+            }
+        }
+    }
+
+    if (!g_sServerTag[0])
+    {
+        int randomPart = GetURandomInt() & 0xFFFF;
+        Format(g_sServerTag, sizeof(g_sServerTag), "id%04X", randomPart);
+    }
+
+    WT_SanitizeServerTag(g_sServerTag, sizeof(g_sServerTag));
+}
+
+public void ConVarChanged_ServerTag(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    WT_UpdateServerTag();
+}
+
 static void RememberMatchPlayerName(const char[] steamId, const char[] name)
 {
     if (!steamId[0] || !name[0])
@@ -1311,12 +1384,52 @@ static void ApplySnapshotToStats(WhaleStats stats, const int data[MATCH_STAT_COU
     stats.loaded = true;
 }
 
+static void WT_PruneExpiredLogRange(int minPlayers, int maxPlayers, int cutoff)
+{
+    if (cutoff <= 0 || !g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+    char condition[96];
+    if (maxPlayers < 0)
+    {
+        Format(condition, sizeof(condition), "player_count >= %d", minPlayers);
+    }
+    else
+    {
+        Format(condition, sizeof(condition), "player_count >= %d AND player_count < %d", minPlayers, maxPlayers);
+    }
+    char query[512];
+    Format(query, sizeof(query), "DELETE lp FROM whaletracker_log_players lp JOIN whaletracker_logs l ON l.log_id = lp.log_id WHERE %s AND l.updated_at < %d", condition, cutoff);
+    SQL_FastQuery(g_hDatabase, query);
+    Format(query, sizeof(query), "DELETE FROM whaletracker_logs WHERE %s AND updated_at < %d", condition, cutoff);
+    SQL_FastQuery(g_hDatabase, query);
+}
+
+static void WT_PruneExpiredLogs()
+{
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    int now = GetTime();
+    int cutoffDay = now - 86400;
+    int cutoffWeek = now - (7 * 86400);
+    int cutoffMonth = now - (30 * 86400);
+
+    WT_PruneExpiredLogRange(0, 6, cutoffDay);
+    WT_PruneExpiredLogRange(6, 14, cutoffWeek);
+    WT_PruneExpiredLogRange(14, -1, cutoffMonth);
+}
+
 static void BeginMatchTracking()
 {
     if (!g_bEnabled)
         return;
 
     ResetMatchStorage();
+    WT_PruneExpiredLogs();
 
     g_iMatchStartTime = GetTime();
     GetCurrentMap(g_sCurrentMap, sizeof(g_sCurrentMap));
@@ -1326,7 +1439,14 @@ static void BeginMatchTracking()
     }
 
     int randomPart = GetURandomInt() & 0xFFFF;
-    Format(g_sCurrentLogId, sizeof(g_sCurrentLogId), "%d_%04X", g_iMatchStartTime, randomPart);
+    if (g_sServerTag[0])
+    {
+        Format(g_sCurrentLogId, sizeof(g_sCurrentLogId), "%d_%04X_%s", g_iMatchStartTime, randomPart, g_sServerTag);
+    }
+    else
+    {
+        Format(g_sCurrentLogId, sizeof(g_sCurrentLogId), "%d_%04X", g_iMatchStartTime, randomPart);
+    }
 
     g_bMatchFinalized = false;
 
@@ -1382,7 +1502,7 @@ static void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[]
         ... "'%s', %d, %d, %d, %d, "
         ... "'%s', %d, %d, %d, %d, "
         ... "'%s', %d, %d, %d, %d, "
-        ... "%d, %d, %d, %d, %d, %d, %d) "
+        ... "%d, %d, %d) "
         ... "ON DUPLICATE KEY UPDATE "
         ... "personaname = VALUES(personaname), "
         ... "kills = VALUES(kills), "
@@ -1551,6 +1671,7 @@ static void FinalizeCurrentMatch(bool shuttingDown)
             continue;
 
         int data[MATCH_STAT_COUNT];
+        RefreshBestWeaponAccuracy(g_MapStats[i]);
         SnapshotFromStats(g_MapStats[i], data);
         AppendSnapshotToStorage(g_MapStats[i].steamId, data);
 
@@ -2239,6 +2360,9 @@ public void OnPluginStart()
     g_hEnabled.AddChangeHook(ConVarChanged_Enabled);
     g_bEnabled = g_hEnabled.BoolValue;
 
+    g_hServerTag = CreateConVar("sm_whaletracker_servertag", "", "Optional identifier appended to WhaleTracker log IDs", FCVAR_NONE);
+    g_hServerTag.AddChangeHook(ConVarChanged_ServerTag);
+
     if (g_hVisibleMaxPlayers == null)
     {
         g_hVisibleMaxPlayers = FindConVar("sv_visiblemaxplayers");
@@ -2254,15 +2378,14 @@ public void OnPluginStart()
     RegAdminCmd("sm_startlog", Command_StartLog, ADMFLAG_GENERIC, "Force start a new WhaleTracker log");
 
     EnsureMatchStorage();
+    ResetMatchStorage();
+    g_sCurrentLogId[0] = '\0';
+
+    WT_UpdateServerTag();
 
     if (g_hGameModeCvar == null)
     {
         g_hGameModeCvar = FindConVar("sm_gamemode");
-    }
-
-    if (g_bEnabled)
-    {
-        BeginMatchTracking();
     }
 
     WhaleTracker_SQLConnect();
@@ -2293,7 +2416,19 @@ public void OnPluginStart()
 
 public void OnConfigsExecuted()
 {
-    g_hOnlineTimer = CreateTimer(2.4, Timer_UpdateOnlineStats, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    g_hOnlineTimer = CreateTimer(2.0, Timer_UpdateOnlineStats, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+
+    if (g_bEnabled)
+    {
+        if (!g_sCurrentLogId[0])
+        {
+            BeginMatchTracking();
+        }
+    }
+    else
+    {
+        ResetMatchStorage();
+    }
 }
 
 public void OnMapStart()
@@ -2306,6 +2441,7 @@ public void OnMapStart()
     else
     {
         ResetMatchStorage();
+        g_sCurrentLogId[0] = '\0';
     }
 
     if (!RepublishOnlineCache())
@@ -3290,11 +3426,16 @@ public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, floa
         }
     }
 
+    bool skipAccuracyLogging = CheckIfAfterburn(damagecustom) || CheckIfBleedDmg(damagetype);
+
     Accuracy_MarkEnemyHit(attacker, inflictor);
 
     if (weaponName[0])
     {
-        Accuracy_LogHit(attacker, weaponName, weaponDefIndex);
+        if (!skipAccuracyLogging)
+        {
+            Accuracy_LogHit(attacker, weaponName, weaponDefIndex);
+        }
         RecordWeaponDamageForClient(attacker, weaponName, weaponDefIndex, damageInt);
     }
 
@@ -3535,6 +3676,43 @@ static void SendMatchStatsMessage(int viewer, int target)
         playerName, kills, deaths, kd, assists, damage, dpm);
     CPrintToChat(viewer, "{green}[WhaleTracker]{default} Taken %d | Taken/min %.1f | Heal %d | HS %d | BS %d | Ubers %d | Time %s",
         damageTaken, dtpm, healing, headshots, backstabs, ubers, timeBuffer);
+
+    WeaponAggregate topWeapons[WT_MAX_TOP_WEAPONS];
+    int topWeaponCount = CollectTopWeaponsForSteamId(matchStats.steamId, topWeapons, WT_MAX_TOP_WEAPONS);
+    if (topWeaponCount > 0)
+    {
+        char weaponBuffer[256];
+        weaponBuffer[0] = '\0';
+        float totalAccuracy = 0.0;
+        int accuracySamples = 0;
+
+        for (int i = 0; i < topWeaponCount; i++)
+        {
+            float weaponAccuracy = 0.0;
+            if (topWeapons[i].shots > 0)
+            {
+                weaponAccuracy = float(topWeapons[i].hits) / float(topWeapons[i].shots) * 100.0;
+                totalAccuracy += weaponAccuracy;
+                accuracySamples++;
+            }
+
+            char segment[128];
+            Format(segment, sizeof(segment), "%s%s (%.1f%%)",
+                weaponBuffer[0] ? ", " : "",
+                topWeapons[i].name,
+                weaponAccuracy);
+            StrCat(weaponBuffer, sizeof(weaponBuffer), segment);
+        }
+
+        float avgAccuracy = (accuracySamples > 0) ? (totalAccuracy / float(accuracySamples)) : 0.0;
+        if (!weaponBuffer[0])
+        {
+            strcopy(weaponBuffer, sizeof(weaponBuffer), "No weapon accuracy recorded");
+        }
+
+        CPrintToChat(viewer, "{green}[WhaleTracker]{default} Accuracy Avg %.1f%% — %s", avgAccuracy, weaponBuffer);
+    }
+
     CPrintToChat(viewer, "{green}[WhaleTracker]{default} Lifetime Kills %d | Deaths %d", lifetimeKills, lifetimeDeaths);
     CPrintToChat(viewer, "{green}[WhaleTracker]{default} Visit {gold}kogasa.tf/stats{default} for way more!");
 }

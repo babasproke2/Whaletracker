@@ -53,6 +53,7 @@ if ($focusedPlayer !== null) {
 }
 
 $summary = array_merge($summary, wt_summary_insights());
+$performanceAverages = wt_fetch_performance_averages();
 
 $baseUrl = wt_base_url();
 
@@ -221,8 +222,6 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId): void
         echo '</div>';
         echo '</td>';
 
-        // Columns must match header order exactly:
-        // K, A, D, K/D, Dmg, DT, D/M, DT/M, AS, Dp | Dp'd, Healing, Headshots, Backstabs, Best Streak, Playtime
         echo '<td>', number_format($kills), '</td>';
         echo '<td>', number_format($assists), '</td>';
         echo '<td>', number_format($deaths), '</td>';
@@ -239,6 +238,32 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId): void
         echo '<td>', number_format($bestStreak), '</td>';
         echo '<td>', htmlspecialchars($playtimeHuman, ENT_QUOTES, 'UTF-8'), '</td>';
         echo '</tr>';
+    }
+}
+
+if (!function_exists('wt_stat_compare_attr')) {
+function wt_stat_compare_attr(bool $enabled, float $value, float $average, bool $higherIsBetter = true): string
+{
+        if (!$enabled || $average <= 0.0 || !is_finite($average)) {
+            return '';
+        }
+
+        $diff = (($value - $average) / $average) * 100.0;
+        if (!is_finite($diff)) {
+            return '';
+        }
+
+        $classSuffix = 'stat-compare--neutral';
+        if (abs($diff) >= 0.05) {
+            $positive = $diff >= 0.0;
+            $good = $higherIsBetter ? $positive : !$positive;
+        $classSuffix = $good ? 'stat-compare--better' : 'stat-compare--worse';
+    }
+
+    $classes = 'stat-compare ' . $classSuffix;
+        $title = sprintf('%+.1f%% vs server average', $diff);
+
+        return ' class="' . htmlspecialchars($classes, ENT_QUOTES, 'UTF-8') . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '"';
     }
 }
 
@@ -343,6 +368,34 @@ function wt_build_page_url(int $page): string
                 $focusedAccuracy = $focusedShots > 0 ? ($focusedHits / max($focusedShots, 1) * 100.0) : 0.0;
                 $focusedDrops = (int)($focused['medic_drops'] ?? 0);
                 $focusedDropped = (int)($focused['uber_drops'] ?? $focusedDrops);
+                $comparisonEnabled = wt_is_logged_in() && !empty($performanceAverages['eligible']);
+                $kdValue = $focused['deaths'] > 0 ? ($focused['kills'] / max($focused['deaths'], 1)) : ($focused['kills'] ?? 0);
+                $kdAverage = (float)($performanceAverages['kd'] ?? 0);
+                $damageAttr = wt_stat_compare_attr($comparisonEnabled, (float)$focusedDamage, (float)($performanceAverages['damage'] ?? 0));
+                $accuracyAttr = wt_stat_compare_attr($comparisonEnabled, (float)$focusedAccuracy, (float)($performanceAverages['accuracy'] ?? 0));
+                $airshotsAttr = wt_stat_compare_attr($comparisonEnabled, (float)($focused['airshots'] ?? 0), (float)($performanceAverages['airshots'] ?? 0));
+                $healingAttr = wt_stat_compare_attr($comparisonEnabled, (float)($focused['healing'] ?? 0), (float)($performanceAverages['healing'] ?? 0));
+                $dpmAttr = wt_stat_compare_attr($comparisonEnabled, (float)$focusedDpm, (float)($performanceAverages['dpm'] ?? 0));
+                $bestWeaponName = '';
+                $bestWeaponAcc = null;
+                if (is_array($focused['weapon_summary'] ?? null) && !empty($focused['weapon_summary'])) {
+                    $best = $focused['weapon_summary'][0];
+                    $bestWeaponName = $best['name'] ?? '';
+                    $bestWeaponAcc = isset($best['accuracy']) ? (float)$best['accuracy'] : null;
+                }
+                $kdTitle = sprintf('K/D: %.2f', $kdValue);
+                $kdClasses = 'stat-kd stat-kd--neutral';
+                $kdDiffValue = null;
+                if ($comparisonEnabled && $kdAverage > 0.0) {
+                    $kdDiff = (($kdValue - $kdAverage) / $kdAverage) * 100.0;
+                    if (is_finite($kdDiff)) {
+                        $kdDiffValue = $kdDiff;
+                        $kdTitle = sprintf('K/D: %.2f vs server %.2f (%+.1f%%)', $kdValue, $kdAverage, $kdDiff);
+                        if (abs($kdDiff) >= 0.05) {
+                            $kdClasses = $kdDiff >= 0 ? 'stat-kd stat-kd--better' : 'stat-kd stat-kd--worse';
+                        }
+                    }
+                }
                 ?>
 
                 <section class="detail-panel">
@@ -361,71 +414,77 @@ function wt_build_page_url(int $page): string
                     <div class="detail-grid">
                         <div>
                             <h3>Kills</h3>
-                            <p><?= number_format($focused['kills']) ?></p>
+                            <p class="<?= htmlspecialchars($kdClasses . ' stat-kd-trigger', ENT_QUOTES, 'UTF-8') ?>" data-kd="<?= htmlspecialchars(number_format($kdValue, 2), ENT_QUOTES, 'UTF-8') ?>" data-kd-average="<?= htmlspecialchars(number_format($kdAverage, 2), ENT_QUOTES, 'UTF-8') ?>" data-kd-diff="<?= $kdDiffValue !== null ? htmlspecialchars(sprintf('%+.1f', $kdDiffValue), ENT_QUOTES, 'UTF-8') : '' ?>" title="<?= htmlspecialchars($kdTitle, ENT_QUOTES, 'UTF-8') ?>"><?= number_format($focused['kills']) ?></p>
                         </div>
                         <div>
                             <h3>Deaths</h3>
-                            <p><?= number_format($focused['deaths']) ?></p>
+                            <p class="<?= htmlspecialchars($kdClasses . ' stat-kd-trigger', ENT_QUOTES, 'UTF-8') ?>" data-kd="<?= htmlspecialchars(number_format($kdValue, 2), ENT_QUOTES, 'UTF-8') ?>" data-kd-average="<?= htmlspecialchars(number_format($kdAverage, 2), ENT_QUOTES, 'UTF-8') ?>" data-kd-diff="<?= $kdDiffValue !== null ? htmlspecialchars(sprintf('%+.1f', $kdDiffValue), ENT_QUOTES, 'UTF-8') : '' ?>" title="<?= htmlspecialchars($kdTitle, ENT_QUOTES, 'UTF-8') ?>"><?= number_format($focused['deaths']) ?></p>
                         </div>
                         <div>
                             <h3>Assists</h3>
-                            <p><?= number_format($focused['assists']) ?></p>
+                            <p title="Assists"><?= number_format($focused['assists']) ?></p>
                         </div>
                         <div>
                             <h3>Damage</h3>
-                            <p><?= number_format($focusedDamage) ?></p>
+                            <p<?= $damageAttr ?> title="Damage Dealt"><?= number_format($focusedDamage) ?></p>
                         </div>
                         <div>
                             <h3>Damage Taken</h3>
-                            <p><?= number_format($focusedDamageTaken) ?></p>
+                            <p title="Damage Taken"><?= number_format($focusedDamageTaken) ?></p>
                         </div>
                         <div>
                             <h3>Damage / Min</h3>
-                            <p><?= number_format($focusedDpm, 1) ?></p>
+                            <p<?= $dpmAttr ?> title="Damage Per Minute"><?= number_format($focusedDpm, 1) ?></p>
                         </div>
                         <div>
                             <h3>Taken / Min</h3>
-                            <p><?= number_format($focusedDtpm, 1) ?></p>
+                            <p title="Damage Taken Per Minute"><?= number_format($focusedDtpm, 1) ?></p>
                         </div>
                         <div>
                             <h3>Accuracy</h3>
-                            <p><?= number_format($focusedAccuracy, 1) ?>%</p>
+                            <p<?= $accuracyAttr ?> title="Accuracy"><?= number_format($focusedAccuracy, 1) ?>%</p>
                         </div>
+                        <?php if ($bestWeaponName !== ''): ?>
+                        <div>
+                            <h3>Best Weapon</h3>
+                            <p class="stat-best-weapon" title="Best Weapon by Accuracy"><?= htmlspecialchars($bestWeaponName, ENT_QUOTES, 'UTF-8') ?><?php if ($bestWeaponAcc !== null): ?> · <?= number_format($bestWeaponAcc, 1) ?>%<?php endif; ?></p>
+                        </div>
+                        <?php endif; ?>
                         <div>
                             <h3>Drops</h3>
-                            <p><?= number_format($focusedDrops) ?></p>
+                            <p title="Medic Drops"><?= number_format($focusedDrops) ?></p>
                         </div>
                         <div>
                             <h3>Dropped Ubers</h3>
-                            <p><?= number_format($focusedDropped) ?></p>
+                            <p title="Times Dropped"><?= number_format($focusedDropped) ?></p>
                         </div>
                         <div>
                             <h3>Total Ubers</h3>
-                            <p><?= number_format($focused['total_ubers']) ?></p>
+                            <p title="Total Ubers Used"><?= number_format($focused['total_ubers']) ?></p>
                         </div>
                         <div>
                             <h3>Total Healing</h3>
-                            <p><?= number_format($focused['healing']) ?></p>
+                            <p<?= $healingAttr ?> title="Healing Done"><?= number_format($focused['healing']) ?></p>
                         </div>
                         <div>
                             <h3>Headshots</h3>
-                            <p><?= number_format($focused['headshots']) ?></p>
+                            <p title="Headshots"><?= number_format($focused['headshots']) ?></p>
                         </div>
                         <div>
                             <h3>Backstabs</h3>
-                            <p><?= number_format($focused['backstabs']) ?></p>
+                            <p title="Backstabs"><?= number_format($focused['backstabs']) ?></p>
                         </div>
                         <div>
                             <h3>Airshots</h3>
-                            <p><?= number_format($focused['airshots']) ?></p>
+                            <p<?= $airshotsAttr ?> title="Airshots"><?= number_format($focused['airshots']) ?></p>
                         </div>
                         <div>
                             <h3>Best Streak</h3>
-                            <p><?= number_format($focused['best_killstreak']) ?></p>
+                            <p title="Best Killstreak"><?= number_format($focused['best_killstreak']) ?></p>
                         </div>
                         <div>
                             <h3>Playtime</h3>
-                            <p><?= htmlspecialchars($focused['playtime_human']) ?></p>
+                            <p title="Time Played"><?= htmlspecialchars($focused['playtime_human']) ?></p>
                         </div>
                     </div>
                 </section>
@@ -596,22 +655,22 @@ function wt_build_page_url(int $page): string
                 <table class="stats-table" id="stats-table-cumulative">
                     <thead>
                     <tr>
-                        <th data-key="player" data-type="text">Player</th>
-                        <th data-key="kills" data-type="number">K</th>
-                        <th data-key="assists" data-type="number">A</th>
-                        <th data-key="deaths" data-type="number">D</th>
-                        <th data-key="kd" data-type="number">K/D</th>
-                        <th data-key="damage" data-type="number">Dmg</th>
-                        <th data-key="damage_taken" data-type="number">DT</th>
-                        <th data-key="dpm" data-type="number">D/M</th>
-                        <th data-key="dtpm" data-type="number">DT/M</th>
-                        <th data-key="airshots" data-type="number">AS</th>
-                        <th data-key="drops" data-type="number">Dp | Dp'd</th>
-                        <th data-key="healing" data-type="number">Healing</th>
-                        <th data-key="headshots" data-type="number">Headshots</th>
-                        <th data-key="backstabs" data-type="number">Backstabs</th>
-                        <th data-key="streak" data-type="number">Best Streak</th>
-                        <th data-key="playtime" data-type="number">Playtime</th>
+                        <th data-key="player" data-type="text" title="Player">Player</th>
+                        <th data-key="kills" data-type="number" title="Kills">K</th>
+                        <th data-key="assists" data-type="number" title="Assists">A</th>
+                        <th data-key="deaths" data-type="number" title="Deaths">D</th>
+                        <th data-key="kd" data-type="number" title="Kill/Death Ratio">K/D</th>
+                        <th data-key="damage" data-type="number" title="Damage Dealt">Dmg</th>
+                        <th data-key="damage_taken" data-type="number" title="Damage Taken">DT</th>
+                        <th data-key="dpm" data-type="number" title="Damage Per Minute">D/M</th>
+                        <th data-key="dtpm" data-type="number" title="Damage Taken Per Minute">DT/M</th>
+                        <th data-key="airshots" data-type="number" title="Airshots">AS</th>
+                        <th data-key="drops" data-type="number" title="Dropped Medics | Times Dropped">Dp | Dp'd</th>
+                        <th data-key="healing" data-type="number" title="Healing Done">Heals</th>
+                        <th data-key="headshots" data-type="number" title="Headshots">Headshots</th>
+                        <th data-key="backstabs" data-type="number" title="Backstabs">Stabs</th>
+                        <th data-key="streak" data-type="number" title="Best Killstreak">Best KS</th>
+                        <th data-key="playtime" data-type="number" title="Playtime">Time</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -684,7 +743,22 @@ const focusedSteamId = <?= $focused ? json_encode($focused['steamid']) : 'null' 
 const defaultAvatar = 'https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/fe/fef49e7fa7a3da7fd2e8a58905cfe144.png';
 const onlineEndpoint = 'online.php';
 const logsEndpoint = 'logs.php';
-const onlineRefreshMs = 5000;
+document.addEventListener('mouseover', (event) => {
+    const target = event.target;
+    if (target && target.classList && target.classList.contains('stat-kd-trigger')) {
+        const kdValue = target.getAttribute('data-kd') || '';
+        const kdAverage = target.getAttribute('data-kd-average') || '';
+        const kdDiff = target.getAttribute('data-kd-diff');
+        if (kdAverage && kdDiff) {
+            target.title = `K/D: ${kdValue} vs server ${kdAverage} (${kdDiff}%)`;
+        } else if (kdAverage) {
+            target.title = `K/D: ${kdValue} vs server ${kdAverage}`;
+        } else {
+            target.title = `K/D: ${kdValue}`;
+        }
+    }
+});
+const onlineRefreshMs = 4000;
 const classIconBase = '/leaderboard/';
 const onlineButton = document.querySelector('.tab-button[data-tab="tab-online"]');
 const onlineCountLabel = onlineButton ? onlineButton.querySelector('.tab-button-count') : null;
@@ -804,10 +878,13 @@ function getClassInfo(classId) {
     };
 }
 
-function createNumberCell(sortValue, displayValue) {
+function createNumberCell(sortValue, displayValue, titleText) {
     const td = document.createElement('td');
     td.dataset.sortValue = String(sortValue);
     td.textContent = displayValue;
+    if (titleText) {
+        td.title = titleText;
+    }
     return td;
 }
 
@@ -904,9 +981,27 @@ function buildLogTable(players) {
     table.className = 'stats-table log-table';
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    ['Player', 'K', 'D', 'K/D', 'A', 'Dmg', 'D/M', 'DT/M', 'AS', 'HS', 'BS', 'Healing', 'Ubers', 'Time'].forEach(label => {
+    const headers = [
+        { key: 'player', label: 'Player', title: 'Player' },
+        { key: 'kills', label: 'K', title: 'Kills' },
+        { key: 'deaths', label: 'D', title: 'Deaths' },
+        { key: 'kd', label: 'K/D', title: 'Kill/Death Ratio' },
+        { key: 'accuracy', label: 'Acc.', title: 'Best Weapon Accuracy' },
+        { key: 'damage', label: 'Dmg', title: 'Damage' },
+        { key: 'dpm', label: 'D/M', title: 'Damage Per Minute' },
+        { key: 'dtpm', label: 'DT/M', title: 'Damage Taken Per Minute' },
+        { key: 'airshots', label: 'AS', title: 'Airshots' },
+        { key: 'headshots', label: 'HS', title: 'Headshots' },
+        { key: 'backstabs', label: 'BS', title: 'Backstabs' },
+        { key: 'healing', label: 'Healing', title: 'Healing Done' },
+        { key: 'ubers', label: 'Ubers', title: 'Total Ubers' },
+        { key: 'time', label: 'Time', title: 'Time Played' },
+    ];
+    headers.forEach(header => {
         const th = document.createElement('th');
-        th.textContent = label;
+        th.textContent = header.label;
+        th.dataset.key = header.key;
+        th.title = header.title;
         headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -917,7 +1012,6 @@ function buildLogTable(players) {
         const profile = getProfile(steamId);
         const kills = Number(player.kills) || 0;
         const deaths = Number(player.deaths) || 0;
-        const assists = Number(player.assists) || 0;
         const damage = Number(player.damage) || 0;
         const damageTaken = Number(player.damage_taken) || 0;
         const healing = Number(player.healing) || 0;
@@ -930,6 +1024,42 @@ function buildLogTable(players) {
         const kd = deaths > 0 ? kills / deaths : kills;
         const dpm = minutes > 0 ? (damage / minutes) : damage;
         const dtpm = minutes > 0 ? (damageTaken / minutes) : damageTaken;
+        const weapons = Array.isArray(player.weapon_summary) ? player.weapon_summary : [];
+        let bestAccuracyValue = null;
+        let bestAccuracyWeapon = '';
+        weapons.forEach(weapon => {
+            if (!weapon || typeof weapon.accuracy !== 'number') {
+                return;
+            }
+            if (bestAccuracyValue === null || weapon.accuracy > bestAccuracyValue) {
+                bestAccuracyValue = weapon.accuracy;
+                bestAccuracyWeapon = weapon.name || '';
+            }
+        });
+
+        if (bestAccuracyValue === null && typeof player.best_weapon_accuracy === 'number') {
+            bestAccuracyValue = player.best_weapon_accuracy;
+            bestAccuracyWeapon = player.best_weapon || bestAccuracyWeapon;
+        }
+
+        if (bestAccuracyValue === null && profile && typeof profile.best_weapon_accuracy_pct === 'number') {
+            bestAccuracyValue = profile.best_weapon_accuracy_pct;
+            bestAccuracyWeapon = profile.best_weapon || bestAccuracyWeapon;
+        }
+
+        if (bestAccuracyValue === null) {
+            const shots = Number(player.shots) || 0;
+            const hits = Number(player.hits) || 0;
+            if (shots > 0) {
+                bestAccuracyValue = (hits / shots) * 100;
+                bestAccuracyWeapon = bestAccuracyWeapon || 'Overall';
+            }
+        }
+
+        const bestAccuracyDisplay = (bestAccuracyValue !== null) ? `${formatNumber(bestAccuracyValue, 1)}%` : '—';
+        const bestAccuracyTitle = bestAccuracyWeapon
+            ? `Best weapon: ${bestAccuracyWeapon}`
+            : 'Best weapon accuracy';
         const tr = document.createElement('tr');
         const playerTd = document.createElement('td');
         playerTd.className = 'player-cell';
@@ -967,19 +1097,19 @@ function buildLogTable(players) {
         appendClassIcons(playerInfo, player.classes_mask || 0);
         playerTd.appendChild(playerInfo);
         tr.appendChild(playerTd);
-        tr.appendChild(createNumberCell(kills, kills.toLocaleString()));
-        tr.appendChild(createNumberCell(deaths, deaths.toLocaleString()));
-        tr.appendChild(createNumberCell(kd.toFixed(4), formatNumber(kd, 2)));
-        tr.appendChild(createNumberCell(assists, assists.toLocaleString()));
-        tr.appendChild(createNumberCell(damage, damage.toLocaleString()));
-        tr.appendChild(createNumberCell(dpm, formatNumber(dpm, 1)));
-        tr.appendChild(createNumberCell(dtpm, formatNumber(dtpm, 1)));
-        tr.appendChild(createNumberCell(airshots, airshots.toLocaleString()));
-        tr.appendChild(createNumberCell(headshots, headshots.toLocaleString()));
-        tr.appendChild(createNumberCell(backstabs, backstabs.toLocaleString()));
-        tr.appendChild(createNumberCell(healing, healing.toLocaleString()));
-        tr.appendChild(createNumberCell(totalUbers, totalUbers.toLocaleString()));
-        tr.appendChild(createNumberCell(playtime, formatPlaytime(playtime)));
+        tr.appendChild(createNumberCell(kills, kills.toLocaleString(), 'Kills'));
+        tr.appendChild(createNumberCell(deaths, deaths.toLocaleString(), 'Deaths'));
+        tr.appendChild(createNumberCell(kd.toFixed(4), formatNumber(kd, 2), 'Kill/Death Ratio'));
+        tr.appendChild(createNumberCell(bestAccuracyValue !== null ? bestAccuracyValue : -1, bestAccuracyDisplay, bestAccuracyTitle));
+        tr.appendChild(createNumberCell(damage, damage.toLocaleString(), 'Damage'));
+        tr.appendChild(createNumberCell(dpm, formatNumber(dpm, 1), 'Damage Per Minute'));
+        tr.appendChild(createNumberCell(dtpm, formatNumber(dtpm, 1), 'Damage Taken Per Minute'));
+        tr.appendChild(createNumberCell(airshots, airshots.toLocaleString(), 'Airshots'));
+        tr.appendChild(createNumberCell(headshots, headshots.toLocaleString(), 'Headshots'));
+        tr.appendChild(createNumberCell(backstabs, backstabs.toLocaleString(), 'Backstabs'));
+        tr.appendChild(createNumberCell(healing, healing.toLocaleString(), 'Healing Done'));
+        tr.appendChild(createNumberCell(totalUbers, totalUbers.toLocaleString(), 'Total Ubers'));
+        tr.appendChild(createNumberCell(playtime, formatPlaytime(playtime), 'Time Played'));
         tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -1341,18 +1471,18 @@ function renderOnline(players) {
         playerTd.appendChild(playerInfo);
         tr.appendChild(playerTd);
 
-        tr.appendChild(createNumberCell(kills, kills.toLocaleString()));
-        tr.appendChild(createNumberCell(deaths, deaths.toLocaleString()));
-        tr.appendChild(createNumberCell(kdValue.toFixed(4), formatNumber(kdValue, 2)));
-        tr.appendChild(createNumberCell(assists, assists.toLocaleString()));
-        tr.appendChild(createNumberCell(damage, damage.toLocaleString()));
-        tr.appendChild(createNumberCell(dtpm, formatNumber(dtpm, 1)));
-        tr.appendChild(createNumberCell(dpm, formatNumber(dpm, 1)));
-        tr.appendChild(createNumberCell(headshots, headshots.toLocaleString()));
-        tr.appendChild(createNumberCell(backstabs, backstabs.toLocaleString()));
-        tr.appendChild(createNumberCell(healing, healing.toLocaleString()));
-        tr.appendChild(createNumberCell(totalUbers, totalUbers.toLocaleString()));
-        tr.appendChild(createNumberCell(timeConnected, formatPlaytime(timeConnected)));
+        tr.appendChild(createNumberCell(kills, kills.toLocaleString(), 'Kills'));
+        tr.appendChild(createNumberCell(deaths, deaths.toLocaleString(), 'Deaths'));
+        tr.appendChild(createNumberCell(kdValue.toFixed(4), formatNumber(kdValue, 2), 'Kill/Death Ratio'));
+        tr.appendChild(createNumberCell(assists, assists.toLocaleString(), 'Assists'));
+        tr.appendChild(createNumberCell(damage, damage.toLocaleString(), 'Damage'));
+        tr.appendChild(createNumberCell(dtpm, formatNumber(dtpm, 1), 'Damage Taken Per Minute'));
+        tr.appendChild(createNumberCell(dpm, formatNumber(dpm, 1), 'Damage Per Minute'));
+        tr.appendChild(createNumberCell(headshots, headshots.toLocaleString(), 'Headshots'));
+        tr.appendChild(createNumberCell(backstabs, backstabs.toLocaleString(), 'Backstabs'));
+        tr.appendChild(createNumberCell(healing, healing.toLocaleString(), 'Healing Done'));
+        tr.appendChild(createNumberCell(totalUbers, totalUbers.toLocaleString(), 'Total Ubers'));
+        tr.appendChild(createNumberCell(timeConnected, formatPlaytime(timeConnected), 'Time Connected'));
 
         onlineTbody.appendChild(tr);
     });
