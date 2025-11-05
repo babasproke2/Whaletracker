@@ -29,3 +29,5 @@ The SourceMod script creates/uses the following tables (names as seen in the plu
 
 These tables contain many columns: kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, playtime, total_ubers, best_streak, time_connected, last_update, personaname, class, team, alive, is_spectator and many lifetime fields like damage_dealt/taken and best weapon fields.
 The web UI reads from these tables to produce the display. Whaletracker is compatible with Redis and other frameworks compatible with Redis.
+
+This repository contains a backup of our DB and cache files.
