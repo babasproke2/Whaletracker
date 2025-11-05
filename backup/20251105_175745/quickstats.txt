@@ -1,0 +1,4 @@
+Hostname:Kogasatopia | New York City | 810
+Port:27015
+Player Count:0/32
+Map Name:koth_touhvest_b6
