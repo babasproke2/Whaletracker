@@ -1,7 +1,5 @@
 <img width="1920" height="919" alt="image" src="https://github.com/user-attachments/assets/14d1401e-1bc3-4fbf-985e-25d3a7cfa23a" />
 
-Overview
-
 WhaleTracker is a stats tracking system used by the kogasatopia site to collect and display player statistics from a Team Fortress 2 server. The system has two main parts:
 
 - Data collection (server-side plugin): a SourceMod plugin (WhaleTracker) that runs on the game server to record in-game events and periodically persist those to a MySQL/MariaDB database.
