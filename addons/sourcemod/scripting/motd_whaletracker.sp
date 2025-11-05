@@ -38,7 +38,7 @@ public Action Command_Whale(int client, int args)
     }
     
     char url[256];
-    Format(url, sizeof(url), "https://kogasa.tf/stats/index.php?q=logs&show=hide#current");
+    Format(url, sizeof(url), "https://kogasa.tf/stats/index.php?q=logs&show=hide&motd=1#current");
     
     Handle kv = CreateKeyValues("data");
     KvSetString(kv, "title", "Whale Stats");

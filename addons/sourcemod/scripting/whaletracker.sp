@@ -25,7 +25,7 @@ stock bool CheckIfBleedDmg(int damageType)
 #define WT_CLASS_OFFSET 1
 #define WT_CLASS_COUNT 9
 #define WT_MAX_WEAPON_NAME 128
-#define WT_MAX_TOP_WEAPONS 3
+#define WT_MAX_TOP_WEAPONS 6
 #define WT_MAX_ESCAPED_NAME (MAX_NAME_LENGTH * 2)
 
 const int WT_ONLINE_CACHE_MAX_AGE = 60;
@@ -37,6 +37,14 @@ enum struct WeaponAggregate
     int hits;
     int damage;
     int defIndex;
+}
+
+enum struct WeaponAccuracyEntry
+{
+    char name[WT_MAX_WEAPON_NAME];
+    float accuracy;
+    int shots;
+    int hits;
 }
 
 static bool WT_TryGetWeaponDefIndex(int entity, int &defIndex)
@@ -86,7 +94,7 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
     switch(defIndex)
     {
         case 9, 10, 11, 12: strcopy(buffer, maxlen, "Shotgun");
-        case 13: strcopy(buffer, maxlen, "Scattergun");
+        case 13, 200, 15029: strcopy(buffer, maxlen, "Scattergun"); // Note: warpaints are a problem, will add a classname handler for paints
         case 14: strcopy(buffer, maxlen, "Sniper Rifle");
         case 15: strcopy(buffer, maxlen, "Minigun");
         case 16: strcopy(buffer, maxlen, "SMG");
@@ -107,6 +115,7 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 45: strcopy(buffer, maxlen, "Force-A-Nature");
         case 1103: strcopy(buffer, maxlen, "Back Scatter");
         case 56: strcopy(buffer, maxlen, "Huntsman");
+        case 1092: strcopy(buffer, maxlen, "Fortified Compound");
         case 61: strcopy(buffer, maxlen, "Ambassador");
         case 127: strcopy(buffer, maxlen, "Direct Hit");
         case 130: strcopy(buffer, maxlen, "Scottish Resistance");
@@ -129,7 +138,6 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 215: strcopy(buffer, maxlen, "Degreaser");
         case 220: strcopy(buffer, maxlen, "Shortstop");
         case 221: strcopy(buffer, maxlen, "Holy Mackerel");
-        case 222: strcopy(buffer, maxlen, "Mad Milk");
         case 224: strcopy(buffer, maxlen, "L'Etranger");
         case 225: strcopy(buffer, maxlen, "Your Eternal Reward");
         case 226: strcopy(buffer, maxlen, "Battalion's Backup");
@@ -142,6 +150,8 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 265: strcopy(buffer, maxlen, "Sticky Jumper");
         case 266: strcopy(buffer, maxlen, "Horseless Headless Horsemann's Headtaker");
         case 294: strcopy(buffer, maxlen, "Lugermorph");
+        case 1104: strcopy(buffer, maxlen, "Air Strike");
+        case 1153: strcopy(buffer, maxlen, "Panic Attack");
         case 298: strcopy(buffer, maxlen, "Iron Curtain");
         case 305: strcopy(buffer, maxlen, "Crusader's Crossbow");
         case 307: strcopy(buffer, maxlen, "Ullapool Caber");
@@ -192,7 +202,6 @@ stock void GetWeaponNameFromDefIndex(int defIndex, char[] buffer, int maxlen)
         case 831: strcopy(buffer, maxlen, "Red-Tape Recorder");
         case 832: strcopy(buffer, maxlen, "Huo-Long Heater");
         case 833: strcopy(buffer, maxlen, "Flying Guillotine");
-        case 834: strcopy(buffer, maxlen, "Neon Annihilator");
         case 851: strcopy(buffer, maxlen, "AWPer Hand");
         default: strcopy(buffer, maxlen, "Unknown");
     }
@@ -217,6 +226,8 @@ enum struct WhaleStats
     int deaths;
     int totalShots;
     int totalHits;
+    int classShots[WT_CLASS_COUNT + WT_CLASS_OFFSET];
+    int classHits[WT_CLASS_COUNT + WT_CLASS_OFFSET];
     int totalHealing;
     int totalUbers;
     int totalMedicDrops;
@@ -228,6 +239,7 @@ enum struct WhaleStats
     int totalDamageTaken;
     int totalUberDrops;
     int damageClassesMask;
+    int favoriteClass;
     float bestWeaponAccuracy;
     char bestWeapon[64];
     int lastSeen;
@@ -278,6 +290,7 @@ ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hEnabled = null;
 ConVar g_hServerTag = null;
 bool g_bDatabaseReady = false;
+bool g_bReconnectScheduled = false;
 bool g_bEnabled = true;
 
 char g_sEnabled[] = "sm_whaletracker_enabled";
@@ -355,6 +368,7 @@ bool g_RocketHurtEnemy[MAXPLAYERS + 1];
 Handle g_RocketShotTimer[MAXPLAYERS + 1];
 char g_RocketPendingWeapon[MAXPLAYERS + 1][64];
 int g_RocketPendingDefIndex[MAXPLAYERS + 1];
+Handle g_LoadRetryTimer[MAXPLAYERS + 1];
 
 float g_LastHitscanHit[MAXPLAYERS + 1];
 
@@ -410,6 +424,7 @@ static void Accuracy_Init()
             CloseHandle(g_RocketShotTimer[i]);
             g_RocketShotTimer[i] = null;
         }
+        CancelLoadRetryTimer(i);
     }
 }
 
@@ -668,6 +683,11 @@ static void ResetStatsStruct(WhaleStats stats, bool resetIdentity)
     stats.deaths = 0;
     stats.totalShots = 0;
     stats.totalHits = 0;
+    for (int classIndex = 0; classIndex < WT_CLASS_COUNT + WT_CLASS_OFFSET; classIndex++)
+    {
+        stats.classShots[classIndex] = 0;
+        stats.classHits[classIndex] = 0;
+    }
     stats.totalHealing = 0;
     stats.totalUbers = 0;
     stats.totalMedicDrops = 0;
@@ -679,6 +699,10 @@ static void ResetStatsStruct(WhaleStats stats, bool resetIdentity)
     stats.totalDamageTaken = 0;
     stats.totalUberDrops = 0;
     stats.damageClassesMask = 0;
+    if (resetIdentity)
+    {
+        stats.favoriteClass = TFClass_Unknown;
+    }
     stats.bestWeaponAccuracy = 0.0;
     stats.bestWeapon[0] = '\0';
     stats.lastSeen = 0;
@@ -716,6 +740,7 @@ static void ResetMapStats(int client)
     g_MapStats[client].bestWeaponAccuracy = g_Stats[client].bestWeaponAccuracy;
     strcopy(g_MapStats[client].bestWeapon, sizeof(g_MapStats[client].bestWeapon), g_Stats[client].bestWeapon);
     g_MapStats[client].isAdmin = g_Stats[client].isAdmin;
+    g_MapStats[client].favoriteClass = g_Stats[client].favoriteClass;
 }
 
 static void ResetRuntimeStats(int client)
@@ -868,17 +893,58 @@ static bool RepublishOnlineCache()
         int healing = pack.ReadCell();
         int headshots = pack.ReadCell();
         int backstabs = pack.ReadCell();
+        int shots = pack.ReadCell();
+        int hits = pack.ReadCell();
         int playtime = pack.ReadCell();
         int totalUbers = pack.ReadCell();
         int bestStreak = pack.ReadCell();
         int classMask = pack.ReadCell();
         int visibleMax = pack.ReadCell();
         int timeConnected = pack.ReadCell();
+        int bestClassId = pack.ReadCell();
+        float bestClassAccuracy = pack.ReadFloat();
+        int bestClassShots = pack.ReadCell();
+        int bestClassHits = pack.ReadCell();
+
+        char weaponNamesEscaped[WT_MAX_TOP_WEAPONS][WT_MAX_WEAPON_NAME * 2];
+        char weaponNameBuffer[WT_MAX_WEAPON_NAME * 2];
+        float weaponAccuracies[WT_MAX_TOP_WEAPONS];
+        int weaponShots[WT_MAX_TOP_WEAPONS];
+        int weaponHits[WT_MAX_TOP_WEAPONS];
+        for (int weaponIndex = 0; weaponIndex < WT_MAX_TOP_WEAPONS; weaponIndex++)
+        {
+            pack.ReadString(weaponNameBuffer, sizeof(weaponNameBuffer));
+            weaponAccuracies[weaponIndex] = pack.ReadFloat();
+            weaponShots[weaponIndex] = pack.ReadCell();
+            weaponHits[weaponIndex] = pack.ReadCell();
+
+            if (weaponNameBuffer[0] == '\0')
+            {
+                weaponNamesEscaped[weaponIndex][0] = '\0';
+            }
+            else
+            {
+                if (g_hDatabase != null)
+                {
+                    SQL_EscapeString(g_hDatabase, weaponNameBuffer, weaponNamesEscaped[weaponIndex], sizeof(weaponNamesEscaped[]));
+                }
+                else
+                {
+                    strcopy(weaponNamesEscaped[weaponIndex], sizeof(weaponNamesEscaped[]), weaponNameBuffer);
+                }
+            }
+        }
 
         Format(query, sizeof(query),
             "REPLACE INTO whaletracker_online "
-            ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, playtime, total_ubers, best_streak, classes_mask, visible_max, time_connected, last_update) "
-            ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d)",
+            ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits, best_class_id, best_class_accuracy, best_class_shots, best_class_hits, "
+            ... "weapon1_name, weapon1_accuracy, weapon1_shots, weapon1_hits, weapon2_name, weapon2_accuracy, weapon2_shots, weapon2_hits, weapon3_name, weapon3_accuracy, weapon3_shots, weapon3_hits, "
+            ... "weapon4_name, weapon4_accuracy, weapon4_shots, weapon4_hits, weapon5_name, weapon5_accuracy, weapon5_shots, weapon5_hits, weapon6_name, weapon6_accuracy, weapon6_shots, weapon6_hits, "
+            ... "playtime, total_ubers, best_streak, classes_mask, visible_max, time_connected, last_update) "
+            ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %.6f, %d, %d, "
+            ... "'%s', %.6f, %d, %d, '%s', %.6f, %d, %d, '%s', %.6f, %d, %d, "
+            ... "'%s', %.6f, %d, %d, '%s', %.6f, %d, %d, '%s', %.6f, %d, %d, "
+            ... "%d, %d, %d, %d, %d, %d, %d)",
             steamId,
             escapedName,
             tfClass,
@@ -893,6 +959,36 @@ static bool RepublishOnlineCache()
             healing,
             headshots,
             backstabs,
+            shots,
+            hits,
+            bestClassId,
+            bestClassAccuracy,
+            bestClassShots,
+            bestClassHits,
+            weaponNamesEscaped[0],
+            weaponAccuracies[0],
+            weaponShots[0],
+            weaponHits[0],
+            weaponNamesEscaped[1],
+            weaponAccuracies[1],
+            weaponShots[1],
+            weaponHits[1],
+            weaponNamesEscaped[2],
+            weaponAccuracies[2],
+            weaponShots[2],
+            weaponHits[2],
+            weaponNamesEscaped[3],
+            weaponAccuracies[3],
+            weaponShots[3],
+            weaponHits[3],
+            weaponNamesEscaped[4],
+            weaponAccuracies[4],
+            weaponShots[4],
+            weaponHits[4],
+            weaponNamesEscaped[5],
+            weaponAccuracies[5],
+            weaponShots[5],
+            weaponHits[5],
             playtime,
             totalUbers,
             bestStreak,
@@ -988,10 +1084,58 @@ if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
             playtime += RoundToFloor(engineNow - g_MapStats[client].connectTime);
         }
 
+        int bestClassId = 0;
+        float bestClassAccuracy = 0.0;
+        int bestClassShots = 0;
+        int bestClassHits = 0;
+        WT_GetBestClassAccuracy(g_MapStats[client], bestClassId, bestClassAccuracy, bestClassShots, bestClassHits);
+
+        WeaponAccuracyEntry topAccuracy[WT_MAX_TOP_WEAPONS];
+        int topWeaponCount = WT_GetTopWeaponAccuracy(g_MapStats[client], topAccuracy);
+
+        char weaponNames[WT_MAX_TOP_WEAPONS][WT_MAX_WEAPON_NAME];
+        char weaponNamesEscaped[WT_MAX_TOP_WEAPONS][WT_MAX_WEAPON_NAME * 2];
+        float weaponAccuracies[WT_MAX_TOP_WEAPONS];
+        int weaponShots[WT_MAX_TOP_WEAPONS];
+        int weaponHits[WT_MAX_TOP_WEAPONS];
+
+        for (int weaponIndex = 0; weaponIndex < WT_MAX_TOP_WEAPONS; weaponIndex++)
+        {
+            if (weaponIndex < topWeaponCount)
+            {
+                strcopy(weaponNames[weaponIndex], sizeof(weaponNames[]), topAccuracy[weaponIndex].name);
+                weaponAccuracies[weaponIndex] = topAccuracy[weaponIndex].accuracy;
+                weaponShots[weaponIndex] = topAccuracy[weaponIndex].shots;
+                weaponHits[weaponIndex] = topAccuracy[weaponIndex].hits;
+                if (g_hDatabase != null)
+                {
+                    SQL_EscapeString(g_hDatabase, weaponNames[weaponIndex], weaponNamesEscaped[weaponIndex], sizeof(weaponNamesEscaped[]));
+                }
+                else
+                {
+                    strcopy(weaponNamesEscaped[weaponIndex], sizeof(weaponNamesEscaped[]), weaponNames[weaponIndex]);
+                }
+            }
+            else
+            {
+                weaponNames[weaponIndex][0] = '\0';
+                weaponAccuracies[weaponIndex] = 0.0;
+                weaponShots[weaponIndex] = 0;
+                weaponHits[weaponIndex] = 0;
+                weaponNamesEscaped[weaponIndex][0] = '\0';
+            }
+        }
+
         Format(query, sizeof(query),
             "REPLACE INTO whaletracker_online "
-            ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, playtime, total_ubers, best_streak, classes_mask, visible_max, time_connected, last_update) "
-            ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d)",
+            ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits, best_class_id, best_class_accuracy, best_class_shots, best_class_hits, "
+            ... "weapon1_name, weapon1_accuracy, weapon1_shots, weapon1_hits, weapon2_name, weapon2_accuracy, weapon2_shots, weapon2_hits, weapon3_name, weapon3_accuracy, weapon3_shots, weapon3_hits, "
+            ... "weapon4_name, weapon4_accuracy, weapon4_shots, weapon4_hits, weapon5_name, weapon5_accuracy, weapon5_shots, weapon5_hits, weapon6_name, weapon6_accuracy, weapon6_shots, weapon6_hits, "
+            ... "playtime, total_ubers, best_streak, classes_mask, visible_max, time_connected, last_update) "
+            ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %.6f, %d, %d, "
+            ... "'%s', %.6f, %d, %d, '%s', %.6f, %d, %d, '%s', %.6f, %d, %d, "
+            ... "'%s', %.6f, %d, %d, '%s', %.6f, %d, %d, '%s', %.6f, %d, %d, "
+            ... "%d, %d, %d, %d, %d, %d, %d)",
             steamId,
             escapedName,
             tfClass,
@@ -1006,6 +1150,36 @@ if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
             g_MapStats[client].totalHealing,
             g_MapStats[client].totalHeadshots,
             g_MapStats[client].totalBackstabs,
+            g_MapStats[client].totalShots,
+            g_MapStats[client].totalHits,
+            bestClassId,
+            bestClassAccuracy,
+            bestClassShots,
+            bestClassHits,
+            weaponNamesEscaped[0],
+            weaponAccuracies[0],
+            weaponShots[0],
+            weaponHits[0],
+            weaponNamesEscaped[1],
+            weaponAccuracies[1],
+            weaponShots[1],
+            weaponHits[1],
+            weaponNamesEscaped[2],
+            weaponAccuracies[2],
+            weaponShots[2],
+            weaponHits[2],
+            weaponNamesEscaped[3],
+            weaponAccuracies[3],
+            weaponShots[3],
+            weaponHits[3],
+            weaponNamesEscaped[4],
+            weaponAccuracies[4],
+            weaponShots[4],
+            weaponHits[4],
+            weaponNamesEscaped[5],
+            weaponAccuracies[5],
+            weaponShots[5],
+            weaponHits[5],
             playtime,
             g_MapStats[client].totalUbers,
             g_MapStats[client].bestKillstreak,
@@ -1031,12 +1205,25 @@ if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
         cachePack.WriteCell(g_MapStats[client].totalHealing);
         cachePack.WriteCell(g_MapStats[client].totalHeadshots);
         cachePack.WriteCell(g_MapStats[client].totalBackstabs);
+        cachePack.WriteCell(g_MapStats[client].totalShots);
+        cachePack.WriteCell(g_MapStats[client].totalHits);
         cachePack.WriteCell(playtime);
         cachePack.WriteCell(g_MapStats[client].totalUbers);
         cachePack.WriteCell(g_MapStats[client].bestKillstreak);
         cachePack.WriteCell(g_MapStats[client].damageClassesMask);
         cachePack.WriteCell(visibleMax);
         cachePack.WriteCell(playtime);
+        cachePack.WriteCell(bestClassId);
+        cachePack.WriteFloat(bestClassAccuracy);
+        cachePack.WriteCell(bestClassShots);
+        cachePack.WriteCell(bestClassHits);
+        for (int weaponIndex = 0; weaponIndex < WT_MAX_TOP_WEAPONS; weaponIndex++)
+        {
+            cachePack.WriteString(weaponNames[weaponIndex]);
+            cachePack.WriteFloat(weaponAccuracies[weaponIndex]);
+            cachePack.WriteCell(weaponShots[weaponIndex]);
+            cachePack.WriteCell(weaponHits[weaponIndex]);
+        }
         cachePack.Reset();
         g_OnlineCache.Push(view_as<any>(cachePack));
     }
@@ -1047,6 +1234,97 @@ if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
     QueueSaveQuery(query, 0, false);
 
     return Plugin_Continue;
+}
+
+static bool WT_ParseFavoriteClassArg(const char[] input, TFClassType &classType)
+{
+    if (!input[0])
+    {
+        return false;
+    }
+
+    char lower[32];
+    strcopy(lower, sizeof(lower), input);
+    StrToLower(lower);
+
+    if (StrEqual(lower, "none", false) || StrEqual(lower, "auto", false) || StrEqual(lower, "clear", false))
+    {
+        classType = TFClass_Unknown;
+        return true;
+    }
+
+    if (StrEqual(lower, "scout", false))
+    {
+        classType = TFClass_Scout;
+        return true;
+    }
+    if (StrEqual(lower, "sniper", false))
+    {
+        classType = TFClass_Sniper;
+        return true;
+    }
+    if (StrEqual(lower, "soldier", false))
+    {
+        classType = TFClass_Soldier;
+        return true;
+    }
+    if (StrEqual(lower, "demo", false) || StrEqual(lower, "demoman", false))
+    {
+        classType = TFClass_DemoMan;
+        return true;
+    }
+    if (StrEqual(lower, "medic", false))
+    {
+        classType = TFClass_Medic;
+        return true;
+    }
+    if (StrEqual(lower, "heavy", false) || StrEqual(lower, "heavyweapons", false))
+    {
+        classType = TFClass_Heavy;
+        return true;
+    }
+    if (StrEqual(lower, "pyro", false))
+    {
+        classType = TFClass_Pyro;
+        return true;
+    }
+    if (StrEqual(lower, "spy", false))
+    {
+        classType = TFClass_Spy;
+        return true;
+    }
+    if (StrEqual(lower, "engi", false) || StrEqual(lower, "engineer", false))
+    {
+        classType = TFClass_Engineer;
+        return true;
+    }
+
+    return false;
+}
+
+static void WT_GetClassDisplayName(TFClassType classType, char[] buffer, int maxlen)
+{
+    static const char classNames[][] =
+    {
+        "Auto",
+        "Scout",
+        "Sniper",
+        "Soldier",
+        "Demoman",
+        "Medic",
+        "Heavy",
+        "Pyro",
+        "Spy",
+        "Engineer"
+    };
+
+    int index = view_as<int>(classType);
+    if (index < 0 || index >= sizeof(classNames))
+    {
+        index = 0;
+    }
+
+    strcopy(buffer, maxlen, classNames[index]);
 }
 
 static void StrToLower(char[] buffer)
@@ -1384,6 +1662,73 @@ static void ApplySnapshotToStats(WhaleStats stats, const int data[MATCH_STAT_COU
     stats.loaded = true;
 }
 
+static void CancelLoadRetryTimer(int client)
+{
+    if (client <= 0 || client > MaxClients)
+        return;
+
+    Handle timer = g_LoadRetryTimer[client];
+    if (timer == null)
+        return;
+
+    if (!IsValidHandle(timer))
+    {
+        g_LoadRetryTimer[client] = null;
+        return;
+    }
+
+    CloseHandle(timer);
+    g_LoadRetryTimer[client] = null;
+}
+
+static void ScheduleLoadRetry(int client)
+{
+    if (!IsValidClient(client) || IsFakeClient(client))
+        return;
+
+    if (g_LoadRetryTimer[client] != null)
+        return;
+
+    int userId = GetClientUserId(client);
+    if (userId <= 0)
+        return;
+
+    g_LoadRetryTimer[client] = CreateTimer(5.0, Timer_RetryLoadStats, userId, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+static bool WT_ShouldReconnect(const char[] error)
+{
+    if (!error[0])
+        return false;
+
+    if (StrContains(error, "server has gone away", false) != -1)
+        return true;
+    if (StrContains(error, "Lost connection", false) != -1)
+        return true;
+    if (StrContains(error, "server closed the connection", false) != -1)
+        return true;
+
+    return false;
+}
+
+static void WT_ScheduleReconnect()
+{
+    if (g_bReconnectScheduled)
+        return;
+
+    g_bReconnectScheduled = true;
+    CreateTimer(1.0, Timer_AttemptReconnect, 0, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+static void WT_HandleDatabaseError(const char[] error)
+{
+    if (!WT_ShouldReconnect(error))
+        return;
+
+    g_bDatabaseReady = false;
+    WT_ScheduleReconnect();
+}
+
 static void WT_PruneExpiredLogRange(int minPlayers, int maxPlayers, int cutoff)
 {
     if (cutoff <= 0 || !g_bDatabaseReady || g_hDatabase == null)
@@ -1423,13 +1768,33 @@ static void WT_PruneExpiredLogs()
     WT_PruneExpiredLogRange(14, -1, cutoffMonth);
 }
 
-static void BeginMatchTracking()
+static int WT_CountActiveHumanPlayers()
+{
+    int count = 0;
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i) && !IsFakeClient(i))
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void BeginMatchTracking(bool forceStart = false)
 {
     if (!g_bEnabled)
         return;
 
-    ResetMatchStorage();
     WT_PruneExpiredLogs();
+
+    if (g_sCurrentLogId[0])
+        return;
+
+    if (!forceStart && WT_CountActiveHumanPlayers() < 2)
+        return;
+
+    ResetMatchStorage();
 
     g_iMatchStartTime = GetTime();
     GetCurrentMap(g_sCurrentMap, sizeof(g_sCurrentMap));
@@ -1471,7 +1836,7 @@ static void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[]
         topWeapons[i].damage = 0;
         topWeapons[i].defIndex = 0;
     }
-    int topCount = CollectTopWeaponsForSteamId(steamId, topWeapons, 3);
+    int topCount = CollectTopWeaponsForSteamId(steamId, topWeapons, WT_MAX_TOP_WEAPONS);
 
     char weaponNameEscaped[WT_MAX_TOP_WEAPONS][128];
     for (int i = 0; i < WT_MAX_TOP_WEAPONS; i++)
@@ -1497,8 +1862,14 @@ static void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[]
         ... "weapon1_name, weapon1_shots, weapon1_hits, weapon1_damage, weapon1_defindex, "
         ... "weapon2_name, weapon2_shots, weapon2_hits, weapon2_damage, weapon2_defindex, "
         ... "weapon3_name, weapon3_shots, weapon3_hits, weapon3_damage, weapon3_defindex, "
+        ... "weapon4_name, weapon4_shots, weapon4_hits, weapon4_damage, weapon4_defindex, "
+        ... "weapon5_name, weapon5_shots, weapon5_hits, weapon5_damage, weapon5_defindex, "
+        ... "weapon6_name, weapon6_shots, weapon6_hits, weapon6_damage, weapon6_defindex, "
         ... "classes_mask, is_admin, last_updated) "
         ... "VALUES ('%s', '%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "'%s', %d, %d, %d, %d, "
+        ... "'%s', %d, %d, %d, %d, "
+        ... "'%s', %d, %d, %d, %d, "
         ... "'%s', %d, %d, %d, %d, "
         ... "'%s', %d, %d, %d, %d, "
         ... "'%s', %d, %d, %d, %d, "
@@ -1542,6 +1913,21 @@ static void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[]
         ... "weapon3_hits = VALUES(weapon3_hits), "
         ... "weapon3_damage = VALUES(weapon3_damage), "
         ... "weapon3_defindex = VALUES(weapon3_defindex), "
+        ... "weapon4_name = VALUES(weapon4_name), "
+        ... "weapon4_shots = VALUES(weapon4_shots), "
+        ... "weapon4_hits = VALUES(weapon4_hits), "
+        ... "weapon4_damage = VALUES(weapon4_damage), "
+        ... "weapon4_defindex = VALUES(weapon4_defindex), "
+        ... "weapon5_name = VALUES(weapon5_name), "
+        ... "weapon5_shots = VALUES(weapon5_shots), "
+        ... "weapon5_hits = VALUES(weapon5_hits), "
+        ... "weapon5_damage = VALUES(weapon5_damage), "
+        ... "weapon5_defindex = VALUES(weapon5_defindex), "
+        ... "weapon6_name = VALUES(weapon6_name), "
+        ... "weapon6_shots = VALUES(weapon6_shots), "
+        ... "weapon6_hits = VALUES(weapon6_hits), "
+        ... "weapon6_damage = VALUES(weapon6_damage), "
+        ... "weapon6_defindex = VALUES(weapon6_defindex), "
         ... "classes_mask = VALUES(classes_mask), "
         ... "is_admin = VALUES(is_admin), "
         ... "last_updated = VALUES(last_updated)",
@@ -1585,6 +1971,21 @@ static void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[]
         topWeapons[2].hits,
         topWeapons[2].damage,
         topWeapons[2].defIndex,
+        weaponNameEscaped[3],
+        topWeapons[3].shots,
+        topWeapons[3].hits,
+        topWeapons[3].damage,
+        topWeapons[3].defIndex,
+        weaponNameEscaped[4],
+        topWeapons[4].shots,
+        topWeapons[4].hits,
+        topWeapons[4].damage,
+        topWeapons[4].defIndex,
+        weaponNameEscaped[5],
+        topWeapons[5].shots,
+        topWeapons[5].hits,
+        topWeapons[5].damage,
+        topWeapons[5].defIndex,
         data[MatchStat_ClassMask],
         data[MatchStat_IsAdmin],
         timestamp);
@@ -1699,6 +2100,14 @@ static void FinalizeCurrentMatch(bool shuttingDown)
         return;
     }
 
+    if (snap.Length < 2)
+    {
+        delete snap;
+        ResetMatchStorage();
+        g_bMatchFinalized = true;
+        return;
+    }
+
     int endTime = GetTime();
     int duration = (g_iMatchStartTime > 0) ? (endTime - g_iMatchStartTime) : 0;
     if (duration < 0)
@@ -1760,7 +2169,6 @@ static void HookClientDamage(int client)
 {
     if (!IsValidClient(client) || !IsClientInGame(client))
         return;
-
     SDKHook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
 }
 
@@ -1922,8 +2330,15 @@ static void RecordShotForClient(int client, const char[] weapon, int defIndex)
     if (!IsValidClient(client) || IsFakeClient(client) || !weapon[0])
         return;
 
+    int classIndex = view_as<int>(TF2_GetPlayerClass(client));
+
     RecordShot(g_Stats[client], weapon);
     RecordShot(g_MapStats[client], weapon);
+    if (classIndex >= WT_CLASS_OFFSET && classIndex < (WT_CLASS_OFFSET + WT_CLASS_COUNT))
+    {
+        g_Stats[client].classShots[classIndex]++;
+        g_MapStats[client].classShots[classIndex]++;
+    }
     MatchWeapons_UpdateTotalsForClient(client, weapon, defIndex, 1, 0, 0);
 }
 
@@ -1932,8 +2347,15 @@ static void RecordHitForClient(int client, const char[] weapon, int defIndex)
     if (!IsValidClient(client) || IsFakeClient(client) || !weapon[0])
         return;
 
+    int classIndex = view_as<int>(TF2_GetPlayerClass(client));
+
     RecordHit(g_Stats[client], weapon);
     RecordHit(g_MapStats[client], weapon);
+    if (classIndex >= WT_CLASS_OFFSET && classIndex < (WT_CLASS_OFFSET + WT_CLASS_COUNT))
+    {
+        g_Stats[client].classHits[classIndex]++;
+        g_MapStats[client].classHits[classIndex]++;
+    }
     MatchWeapons_UpdateTotalsForClient(client, weapon, defIndex, 0, 1, 0);
 }
 
@@ -2106,6 +2528,145 @@ static void RefreshBestWeaponAccuracy(WhaleStats stats)
     delete snap;
 }
 
+static void WT_GetBestClassAccuracy(const WhaleStats stats, int &classId, float &accuracy, int &shots, int &hits)
+{
+    classId = 0;
+    accuracy = 0.0;
+    shots = 0;
+    hits = 0;
+
+    TFClassType preferred = view_as<TFClassType>(stats.favoriteClass);
+    if (preferred >= TFClass_Scout && preferred <= TFClass_Engineer)
+    {
+        classId = view_as<int>(preferred);
+        shots = stats.classShots[classId];
+        hits = stats.classHits[classId];
+        if (shots > 0)
+        {
+            accuracy = (float(hits) / float(shots)) * 100.0;
+        }
+        else
+        {
+            accuracy = 0.0;
+        }
+        return;
+    }
+
+    for (int classIndex = WT_CLASS_OFFSET; classIndex < WT_CLASS_OFFSET + WT_CLASS_COUNT; classIndex++)
+    {
+        int classShots = stats.classShots[classIndex];
+        if (classShots <= 0)
+        {
+            continue;
+        }
+
+        int classHits = stats.classHits[classIndex];
+        float classAccuracy = (float(classHits) / float(classShots)) * 100.0;
+
+        if (classAccuracy > accuracy)
+        {
+            accuracy = classAccuracy;
+            classId = classIndex;
+            shots = classShots;
+            hits = classHits;
+        }
+    }
+}
+
+static int WT_GetTopWeaponAccuracy(const WhaleStats stats, WeaponAccuracyEntry output[WT_MAX_TOP_WEAPONS])
+{
+    if (stats.weaponShots == null || stats.weaponHits == null)
+    {
+        return 0;
+    }
+
+    StringMapSnapshot snap = stats.weaponShots.Snapshot();
+    if (snap == null)
+    {
+        return 0;
+    }
+
+    WeaponAccuracyEntry top[WT_MAX_TOP_WEAPONS];
+    int topCount = 0;
+
+    char key[WT_MAX_WEAPON_NAME];
+
+    for (int i = 0; i < snap.Length; i++)
+    {
+        snap.GetKey(i, key, sizeof(key));
+
+        int shots = 0;
+        if (!stats.weaponShots.GetValue(key, shots) || shots <= 0)
+        {
+            continue;
+        }
+
+        int hits = 0;
+        stats.weaponHits.GetValue(key, hits);
+
+        float accuracy = (float(hits) / float(shots)) * 100.0;
+
+        char display[WT_MAX_WEAPON_NAME];
+        if (stats.weaponNames != null && stats.weaponNames.GetString(key, display, sizeof(display)))
+        {
+            // display already filled
+        }
+        else
+        {
+            strcopy(display, sizeof(display), key);
+        }
+
+        WeaponAccuracyEntry candidate;
+        strcopy(candidate.name, sizeof(candidate.name), display);
+        candidate.accuracy = accuracy;
+        candidate.shots = shots;
+        candidate.hits = hits;
+
+        int insertPos = topCount;
+        for (int j = 0; j < topCount; j++)
+        {
+            if (candidate.accuracy > top[j].accuracy || (FloatCompare(candidate.accuracy, top[j].accuracy) == 0 && candidate.hits > top[j].hits))
+            {
+                insertPos = j;
+                break;
+            }
+        }
+
+        if (insertPos < WT_MAX_TOP_WEAPONS)
+        {
+            int shiftEnd = topCount;
+            if (shiftEnd >= WT_MAX_TOP_WEAPONS)
+            {
+                shiftEnd = WT_MAX_TOP_WEAPONS - 1;
+            }
+
+            for (int j = shiftEnd; j > insertPos; j--)
+            {
+                top[j] = top[j - 1];
+            }
+            top[insertPos] = candidate;
+            if (topCount < WT_MAX_TOP_WEAPONS)
+            {
+                topCount++;
+            }
+        }
+    }
+
+    delete snap;
+
+    int count = 0;
+    for (int i = 0; i < topCount && i < WT_MAX_TOP_WEAPONS; i++)
+    {
+        if (top[i].shots <= 0)
+        {
+            continue;
+        }
+        output[count++] = top[i];
+    }
+
+    return count;
+}
+
 static void ResetLifeCounters(WhaleStats stats)
 {
     stats.currentKillsLife = 0;
@@ -2229,6 +2790,8 @@ static void RunSaveQuerySync(const char[] query, int userId)
     {
         char error[256];
         SQL_GetError(g_hDatabase, error, sizeof(error));
+
+        WT_HandleDatabaseError(error);
 
         if (userId > 0)
         {
@@ -2375,6 +2938,8 @@ public void OnPluginStart()
 
     RegConsoleCmd("sm_whalestats", Command_ShowStats, "Show your Whale Tracker statistics.");
     RegConsoleCmd("sm_stats", Command_ShowStats, "Show your Whale Tracker statistics.");
+    RegConsoleCmd("sm_fav", Command_SetFavoriteClass, "Set your WhaleTracker favorite class.");
+    RegConsoleCmd("sm_favorite", Command_SetFavoriteClass, "Set your WhaleTracker favorite class.");
     RegAdminCmd("sm_startlog", Command_StartLog, ADMFLAG_GENERIC, "Force start a new WhaleTracker log");
 
     EnsureMatchStorage();
@@ -2520,6 +3085,7 @@ public void OnPluginEnd()
             CloseHandle(g_RocketShotTimer[i]);
             g_RocketShotTimer[i] = null;
         }
+        CancelLoadRetryTimer(i);
     }
 }
 
@@ -2527,6 +3093,8 @@ public void OnClientPutInServer(int client)
 {
     if (IsFakeClient(client))
         return;
+
+    CancelLoadRetryTimer(client);
 
     ResetRuntimeStats(client);
     g_Stats[client].connectTime = GetEngineTime();
@@ -2563,6 +3131,8 @@ public void OnClientPutInServer(int client)
     {
         LoadClientStats(client);
     }
+
+    BeginMatchTracking();
 }
 
 public void OnClientCookiesCached(int client)
@@ -2584,6 +3154,8 @@ public void OnClientDisconnect(int client)
     {
         SDKUnhook(client, SDKHook_OnTakeDamage, OnPlayerTakeDamage);
     }
+
+    CancelLoadRetryTimer(client);
 
     AccumulatePlaytime(client);
     SaveClientStats(client, true);
@@ -2640,6 +3212,38 @@ public Action Timer_CheckAdminStatus(Handle timer, int userid)
     return Plugin_Stop;
 }
 
+public Action Timer_RetryLoadStats(Handle timer, any userId)
+{
+    int client = GetClientOfUserId(userId);
+    if (client <= 0 || client > MaxClients)
+    {
+        return Plugin_Stop;
+    }
+
+    g_LoadRetryTimer[client] = null;
+
+    if (!IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Stop;
+    }
+
+    if (!AreClientCookiesCached(client))
+    {
+        ScheduleLoadRetry(client);
+        return Plugin_Stop;
+    }
+
+    LoadClientStats(client);
+    return Plugin_Stop;
+}
+
+public Action Timer_AttemptReconnect(Handle timer, any data)
+{
+    g_bReconnectScheduled = false;
+    WhaleTracker_SQLConnect();
+    return Plugin_Stop;
+}
+
 public void SaveAdminStatus(int client)
 {
     if (client > 0 && IsClientInGame(client) && !IsFakeClient(client))
@@ -2668,6 +3272,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     {
         LogError("[WhaleTracker] Database connection failed: %s", error);
         g_bDatabaseReady = false;
+        WT_ScheduleReconnect();
         return;
     }
 
@@ -2680,135 +3285,247 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     }
 
     char query[SAVE_QUERY_MAXLEN];
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker` ("
-        ... "`steamid` VARCHAR(32) PRIMARY KEY,"
-        ... "`personaname` VARCHAR(128) DEFAULT '',"
-        ... "`first_seen` INTEGER,"
-        ... "`kills` INTEGER DEFAULT 0,"
-        ... "`deaths` INTEGER DEFAULT 0,"
-        ... "`shots` INTEGER DEFAULT 0,"
-        ... "`hits` INTEGER DEFAULT 0,"
-        ... "`healing` INTEGER DEFAULT 0,"
-        ... "`total_ubers` INTEGER DEFAULT 0,"
-        ... "`best_ubers_life` INTEGER DEFAULT 0,"
-        ... "`medic_drops` INTEGER DEFAULT 0,"
-        ... "`uber_drops` INTEGER DEFAULT 0,"
-        ... "`airshots` INTEGER DEFAULT 0,"
-        ... "`headshots` INTEGER DEFAULT 0,"
-        ... "`backstabs` INTEGER DEFAULT 0,"
-        ... "`best_headshots_life` INTEGER DEFAULT 0,"
-        ... "`best_backstabs_life` INTEGER DEFAULT 0,"
-        ... "`best_kills_life` INTEGER DEFAULT 0,"
-        ... "`best_killstreak` INTEGER DEFAULT 0,"
-        ... "`best_score_life` INTEGER DEFAULT 0,"
-        ... "`assists` INTEGER DEFAULT 0,"
-        ... "`best_assists_life` INTEGER DEFAULT 0,"
-        ... "`playtime` INTEGER DEFAULT 0,"
-        ... "`best_weapon` VARCHAR(64) DEFAULT '',"
-        ... "`best_weapon_accuracy` FLOAT DEFAULT 0,"
-        ... "`damage_dealt` INTEGER DEFAULT 0,"
-        ... "`damage_taken` INTEGER DEFAULT 0,"
-        ... "`last_seen` INTEGER DEFAULT 0,"
-        ... "`is_admin` TINYINT(1) DEFAULT 0"
-        ... ")");
+    static const char sWhaleTableColumns[][] =
+    {
+        "`steamid` VARCHAR(32) PRIMARY KEY",
+        "`personaname` VARCHAR(128) DEFAULT ''",
+        "`first_seen` INTEGER",
+        "`kills` INTEGER DEFAULT 0",
+        "`deaths` INTEGER DEFAULT 0",
+        "`shots` INTEGER DEFAULT 0",
+        "`hits` INTEGER DEFAULT 0",
+        "`shots_scout` INTEGER DEFAULT 0",
+        "`hits_scout` INTEGER DEFAULT 0",
+        "`shots_sniper` INTEGER DEFAULT 0",
+        "`hits_sniper` INTEGER DEFAULT 0",
+        "`shots_soldier` INTEGER DEFAULT 0",
+        "`hits_soldier` INTEGER DEFAULT 0",
+        "`shots_demoman` INTEGER DEFAULT 0",
+        "`hits_demoman` INTEGER DEFAULT 0",
+        "`shots_medic` INTEGER DEFAULT 0",
+        "`hits_medic` INTEGER DEFAULT 0",
+        "`shots_heavy` INTEGER DEFAULT 0",
+        "`hits_heavy` INTEGER DEFAULT 0",
+        "`shots_pyro` INTEGER DEFAULT 0",
+        "`hits_pyro` INTEGER DEFAULT 0",
+        "`shots_spy` INTEGER DEFAULT 0",
+        "`hits_spy` INTEGER DEFAULT 0",
+        "`shots_engineer` INTEGER DEFAULT 0",
+        "`hits_engineer` INTEGER DEFAULT 0",
+        "`healing` INTEGER DEFAULT 0",
+        "`total_ubers` INTEGER DEFAULT 0",
+        "`best_ubers_life` INTEGER DEFAULT 0",
+        "`medic_drops` INTEGER DEFAULT 0",
+        "`uber_drops` INTEGER DEFAULT 0",
+        "`airshots` INTEGER DEFAULT 0",
+        "`headshots` INTEGER DEFAULT 0",
+        "`backstabs` INTEGER DEFAULT 0",
+        "`best_headshots_life` INTEGER DEFAULT 0",
+        "`best_backstabs_life` INTEGER DEFAULT 0",
+        "`best_kills_life` INTEGER DEFAULT 0",
+        "`best_killstreak` INTEGER DEFAULT 0",
+        "`best_score_life` INTEGER DEFAULT 0",
+        "`assists` INTEGER DEFAULT 0",
+        "`best_assists_life` INTEGER DEFAULT 0",
+        "`playtime` INTEGER DEFAULT 0",
+        "`best_weapon` VARCHAR(64) DEFAULT ''",
+        "`best_weapon_accuracy` FLOAT DEFAULT 0",
+        "`damage_dealt` INTEGER DEFAULT 0",
+        "`damage_taken` INTEGER DEFAULT 0",
+        "`last_seen` INTEGER DEFAULT 0",
+        "`favorite_class` TINYINT DEFAULT 0",
+        "`is_admin` TINYINT(1) DEFAULT 0"
+    };
+
+    query[0] = '\0';
+    StrCat(query, sizeof(query), "CREATE TABLE IF NOT EXISTS `whaletracker` (");
+    for (int i = 0; i < sizeof(sWhaleTableColumns); i++)
+    {
+        if (i > 0)
+        {
+            StrCat(query, sizeof(query), ", ");
+        }
+        StrCat(query, sizeof(query), sWhaleTableColumns[i]);
+    }
+    StrCat(query, sizeof(query), ")");
     g_hDatabase.Query(WhaleTracker_CreateTable, query);
 
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker_online` ("
-        ... "`steamid` VARCHAR(32) PRIMARY KEY,"
-        ... "`personaname` VARCHAR(128) DEFAULT '',"
-        ... "`class` TINYINT DEFAULT 0,"
-        ... "`team` TINYINT DEFAULT 0,"
-        ... "`alive` TINYINT DEFAULT 0,"
-        ... "`is_spectator` TINYINT DEFAULT 0,"
-        ... "`kills` INTEGER DEFAULT 0,"
-        ... "`deaths` INTEGER DEFAULT 0,"
-        ... "`assists` INTEGER DEFAULT 0,"
-        ... "`damage` INTEGER DEFAULT 0,"
-        ... "`damage_taken` INTEGER DEFAULT 0,"
-        ... "`healing` INTEGER DEFAULT 0,"
-        ... "`headshots` INTEGER DEFAULT 0,"
-        ... "`backstabs` INTEGER DEFAULT 0,"
-        ... "`playtime` INTEGER DEFAULT 0,"
-        ... "`total_ubers` INTEGER DEFAULT 0,"
-        ... "`best_streak` INTEGER DEFAULT 0,"
-        ... "`classes_mask` INTEGER DEFAULT 0,"
-        ... "`visible_max` INTEGER DEFAULT 0,"
-        ... "`time_connected` INTEGER DEFAULT 0,"
-        ... "`last_update` INTEGER DEFAULT 0"
-        ... ")");
+    static const char sOnlineTableColumns[][] =
+    {
+        "`steamid` VARCHAR(32) PRIMARY KEY",
+        "`personaname` VARCHAR(128) DEFAULT ''",
+        "`class` TINYINT DEFAULT 0",
+        "`team` TINYINT DEFAULT 0",
+        "`alive` TINYINT DEFAULT 0",
+        "`is_spectator` TINYINT DEFAULT 0",
+        "`kills` INTEGER DEFAULT 0",
+        "`deaths` INTEGER DEFAULT 0",
+        "`assists` INTEGER DEFAULT 0",
+        "`damage` INTEGER DEFAULT 0",
+        "`damage_taken` INTEGER DEFAULT 0",
+        "`healing` INTEGER DEFAULT 0",
+        "`headshots` INTEGER DEFAULT 0",
+        "`backstabs` INTEGER DEFAULT 0",
+        "`shots` INTEGER DEFAULT 0",
+        "`hits` INTEGER DEFAULT 0",
+        "`best_class_id` TINYINT DEFAULT 0",
+        "`best_class_accuracy` FLOAT DEFAULT 0",
+        "`best_class_shots` INTEGER DEFAULT 0",
+        "`best_class_hits` INTEGER DEFAULT 0",
+        "`weapon1_name` VARCHAR(64) DEFAULT ''",
+        "`weapon1_accuracy` FLOAT DEFAULT 0",
+        "`weapon1_shots` INTEGER DEFAULT 0",
+        "`weapon1_hits` INTEGER DEFAULT 0",
+        "`weapon2_name` VARCHAR(64) DEFAULT ''",
+        "`weapon2_accuracy` FLOAT DEFAULT 0",
+        "`weapon2_shots` INTEGER DEFAULT 0",
+        "`weapon2_hits` INTEGER DEFAULT 0",
+        "`weapon3_name` VARCHAR(64) DEFAULT ''",
+        "`weapon3_accuracy` FLOAT DEFAULT 0",
+        "`weapon3_shots` INTEGER DEFAULT 0",
+        "`weapon3_hits` INTEGER DEFAULT 0",
+        "`weapon4_name` VARCHAR(64) DEFAULT ''",
+        "`weapon4_accuracy` FLOAT DEFAULT 0",
+        "`weapon4_shots` INTEGER DEFAULT 0",
+        "`weapon4_hits` INTEGER DEFAULT 0",
+        "`weapon5_name` VARCHAR(64) DEFAULT ''",
+        "`weapon5_accuracy` FLOAT DEFAULT 0",
+        "`weapon5_shots` INTEGER DEFAULT 0",
+        "`weapon5_hits` INTEGER DEFAULT 0",
+        "`weapon6_name` VARCHAR(64) DEFAULT ''",
+        "`weapon6_accuracy` FLOAT DEFAULT 0",
+        "`weapon6_shots` INTEGER DEFAULT 0",
+        "`weapon6_hits` INTEGER DEFAULT 0",
+        "`playtime` INTEGER DEFAULT 0",
+        "`total_ubers` INTEGER DEFAULT 0",
+        "`best_streak` INTEGER DEFAULT 0",
+        "`classes_mask` INTEGER DEFAULT 0",
+        "`visible_max` INTEGER DEFAULT 0",
+        "`time_connected` INTEGER DEFAULT 0",
+        "`last_update` INTEGER DEFAULT 0"
+    };
+
+    query[0] = '\0';
+    StrCat(query, sizeof(query), "CREATE TABLE IF NOT EXISTS `whaletracker_online` (");
+    for (int i = 0; i < sizeof(sOnlineTableColumns); i++)
+    {
+        if (i > 0)
+        {
+            StrCat(query, sizeof(query), ", ");
+        }
+        StrCat(query, sizeof(query), sOnlineTableColumns[i]);
+    }
+    StrCat(query, sizeof(query), ")");
     g_hDatabase.Query(WhaleTracker_CreateOnlineTable, query);
 
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker_logs` ("
-        ... "`log_id` VARCHAR(64) PRIMARY KEY,"
-        ... "`map` VARCHAR(64) DEFAULT '',"
-        ... "`gamemode` VARCHAR(64) DEFAULT 'Unknown',"
-        ... "`started_at` INTEGER DEFAULT 0,"
-        ... "`ended_at` INTEGER DEFAULT 0,"
-        ... "`duration` INTEGER DEFAULT 0,"
-        ... "`player_count` INTEGER DEFAULT 0,"
-        ... "`created_at` INTEGER DEFAULT 0,"
-        ... "`updated_at` INTEGER DEFAULT 0"
-        ... ")");
+    static const char sLogTableColumns[][] =
+    {
+        "`log_id` VARCHAR(64) PRIMARY KEY",
+        "`map` VARCHAR(64) DEFAULT ''",
+        "`gamemode` VARCHAR(64) DEFAULT 'Unknown'",
+        "`started_at` INTEGER DEFAULT 0",
+        "`ended_at` INTEGER DEFAULT 0",
+        "`duration` INTEGER DEFAULT 0",
+        "`player_count` INTEGER DEFAULT 0",
+        "`created_at` INTEGER DEFAULT 0",
+        "`updated_at` INTEGER DEFAULT 0"
+    };
+
+    query[0] = '\0';
+    StrCat(query, sizeof(query), "CREATE TABLE IF NOT EXISTS `whaletracker_logs` (");
+    for (int i = 0; i < sizeof(sLogTableColumns); i++)
+    {
+        if (i > 0)
+        {
+            StrCat(query, sizeof(query), ", ");
+        }
+        StrCat(query, sizeof(query), sLogTableColumns[i]);
+    }
+    StrCat(query, sizeof(query), ")");
     g_hDatabase.Query(WhaleTracker_CreateLogsTable, query);
 
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker_log_players` ("
-        ... "`log_id` VARCHAR(64) NOT NULL,"
-        ... "`steamid` VARCHAR(32) NOT NULL,"
-        ... "`personaname` VARCHAR(128) DEFAULT '',"
-        ... "`kills` INTEGER DEFAULT 0,"
-        ... "`deaths` INTEGER DEFAULT 0,"
-        ... "`assists` INTEGER DEFAULT 0,"
-        ... "`damage` INTEGER DEFAULT 0,"
-        ... "`damage_taken` INTEGER DEFAULT 0,"
-        ... "`healing` INTEGER DEFAULT 0,"
-        ... "`headshots` INTEGER DEFAULT 0,"
-        ... "`backstabs` INTEGER DEFAULT 0,"
-        ... "`total_ubers` INTEGER DEFAULT 0,"
-        ... "`playtime` INTEGER DEFAULT 0,"
-        ... "`medic_drops` INTEGER DEFAULT 0,"
-        ... "`uber_drops` INTEGER DEFAULT 0,"
-        ... "`airshots` INTEGER DEFAULT 0,"
-        ... "`shots` INTEGER DEFAULT 0,"
-        ... "`hits` INTEGER DEFAULT 0,"
-        ... "`best_streak` INTEGER DEFAULT 0,"
-        ... "`best_headshots_life` INTEGER DEFAULT 0,"
-        ... "`best_backstabs_life` INTEGER DEFAULT 0,"
-        ... "`best_score_life` INTEGER DEFAULT 0,"
-        ... "`best_kills_life` INTEGER DEFAULT 0,"
-        ... "`best_assists_life` INTEGER DEFAULT 0,"
-        ... "`best_ubers_life` INTEGER DEFAULT 0,"
-        ... "`weapon1_name` VARCHAR(128) DEFAULT '',"
-        ... "`weapon1_shots` INTEGER DEFAULT 0,"
-        ... "`weapon1_hits` INTEGER DEFAULT 0,"
-        ... "`weapon1_damage` INTEGER DEFAULT 0,"
-        ... "`weapon1_defindex` INTEGER DEFAULT 0,"
-        ... "`weapon2_name` VARCHAR(128) DEFAULT '',"
-        ... "`weapon2_shots` INTEGER DEFAULT 0,"
-        ... "`weapon2_hits` INTEGER DEFAULT 0,"
-        ... "`weapon2_damage` INTEGER DEFAULT 0,"
-        ... "`weapon2_defindex` INTEGER DEFAULT 0,"
-        ... "`weapon3_name` VARCHAR(128) DEFAULT '',"
-        ... "`weapon3_shots` INTEGER DEFAULT 0,"
-        ... "`weapon3_hits` INTEGER DEFAULT 0,"
-        ... "`weapon3_damage` INTEGER DEFAULT 0,"
-        ... "`weapon3_defindex` INTEGER DEFAULT 0,"
-        ... "`airshots_soldier` INTEGER DEFAULT 0,"
-        ... "`airshots_soldier_height` INTEGER DEFAULT 0,"
-        ... "`airshots_demoman` INTEGER DEFAULT 0,"
-        ... "`airshots_demoman_height` INTEGER DEFAULT 0,"
-        ... "`airshots_sniper` INTEGER DEFAULT 0,"
-        ... "`airshots_sniper_height` INTEGER DEFAULT 0,"
-        ... "`airshots_medic` INTEGER DEFAULT 0,"
-        ... "`airshots_medic_height` INTEGER DEFAULT 0,"
-        ... "`classes_mask` INTEGER DEFAULT 0,"
-        ... "`is_admin` TINYINT DEFAULT 0,"
-        ... "`last_updated` INTEGER DEFAULT 0,"
-        ... "PRIMARY KEY (`log_id`, `steamid`)"
-        ... ")");
+    static const char sLogPlayersColumns[][] =
+    {
+        "`log_id` VARCHAR(64) NOT NULL",
+        "`steamid` VARCHAR(32) NOT NULL",
+        "`personaname` VARCHAR(128) DEFAULT ''",
+        "`kills` INTEGER DEFAULT 0",
+        "`deaths` INTEGER DEFAULT 0",
+        "`assists` INTEGER DEFAULT 0",
+        "`damage` INTEGER DEFAULT 0",
+        "`damage_taken` INTEGER DEFAULT 0",
+        "`healing` INTEGER DEFAULT 0",
+        "`headshots` INTEGER DEFAULT 0",
+        "`backstabs` INTEGER DEFAULT 0",
+        "`total_ubers` INTEGER DEFAULT 0",
+        "`playtime` INTEGER DEFAULT 0",
+        "`medic_drops` INTEGER DEFAULT 0",
+        "`uber_drops` INTEGER DEFAULT 0",
+        "`airshots` INTEGER DEFAULT 0",
+        "`shots` INTEGER DEFAULT 0",
+        "`hits` INTEGER DEFAULT 0",
+        "`best_streak` INTEGER DEFAULT 0",
+        "`best_headshots_life` INTEGER DEFAULT 0",
+        "`best_backstabs_life` INTEGER DEFAULT 0",
+        "`best_score_life` INTEGER DEFAULT 0",
+        "`best_kills_life` INTEGER DEFAULT 0",
+        "`best_assists_life` INTEGER DEFAULT 0",
+        "`best_ubers_life` INTEGER DEFAULT 0",
+        "`weapon1_name` VARCHAR(128) DEFAULT ''",
+        "`weapon1_shots` INTEGER DEFAULT 0",
+        "`weapon1_hits` INTEGER DEFAULT 0",
+        "`weapon1_damage` INTEGER DEFAULT 0",
+        "`weapon1_defindex` INTEGER DEFAULT 0",
+        "`weapon2_name` VARCHAR(128) DEFAULT ''",
+        "`weapon2_shots` INTEGER DEFAULT 0",
+        "`weapon2_hits` INTEGER DEFAULT 0",
+        "`weapon2_damage` INTEGER DEFAULT 0",
+        "`weapon2_defindex` INTEGER DEFAULT 0",
+        "`weapon3_name` VARCHAR(128) DEFAULT ''",
+        "`weapon3_shots` INTEGER DEFAULT 0",
+        "`weapon3_hits` INTEGER DEFAULT 0",
+        "`weapon3_damage` INTEGER DEFAULT 0",
+        "`weapon3_defindex` INTEGER DEFAULT 0",
+        "`weapon4_name` VARCHAR(128) DEFAULT ''",
+        "`weapon4_shots` INTEGER DEFAULT 0",
+        "`weapon4_hits` INTEGER DEFAULT 0",
+        "`weapon4_damage` INTEGER DEFAULT 0",
+        "`weapon4_defindex` INTEGER DEFAULT 0",
+        "`weapon5_name` VARCHAR(128) DEFAULT ''",
+        "`weapon5_shots` INTEGER DEFAULT 0",
+        "`weapon5_hits` INTEGER DEFAULT 0",
+        "`weapon5_damage` INTEGER DEFAULT 0",
+        "`weapon5_defindex` INTEGER DEFAULT 0",
+        "`weapon6_name` VARCHAR(128) DEFAULT ''",
+        "`weapon6_shots` INTEGER DEFAULT 0",
+        "`weapon6_hits` INTEGER DEFAULT 0",
+        "`weapon6_damage` INTEGER DEFAULT 0",
+        "`weapon6_defindex` INTEGER DEFAULT 0",
+        "`airshots_soldier` INTEGER DEFAULT 0",
+        "`airshots_soldier_height` INTEGER DEFAULT 0",
+        "`airshots_demoman` INTEGER DEFAULT 0",
+        "`airshots_demoman_height` INTEGER DEFAULT 0",
+        "`airshots_sniper` INTEGER DEFAULT 0",
+        "`airshots_sniper_height` INTEGER DEFAULT 0",
+        "`airshots_medic` INTEGER DEFAULT 0",
+        "`airshots_medic_height` INTEGER DEFAULT 0",
+        "`classes_mask` INTEGER DEFAULT 0",
+        "`is_admin` TINYINT DEFAULT 0",
+        "`last_updated` INTEGER DEFAULT 0",
+        "PRIMARY KEY (`log_id`, `steamid`)"
+    };
+
+    query[0] = '\0';
+    StrCat(query, sizeof(query), "CREATE TABLE IF NOT EXISTS `whaletracker_log_players` (");
+    for (int i = 0; i < sizeof(sLogPlayersColumns); i++)
+    {
+        if (i > 0)
+        {
+            StrCat(query, sizeof(query), ", ");
+        }
+        StrCat(query, sizeof(query), sLogPlayersColumns[i]);
+    }
+    StrCat(query, sizeof(query), ")");
     g_hDatabase.Query(WhaleTracker_CreateLogPlayersTable, query);
 
     SQL_FastQuery(g_hDatabase, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
@@ -2819,6 +3536,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to create table: %s", error);
+        WT_HandleDatabaseError(error);
     }
 
     PumpSaveQueue();
@@ -2826,13 +3544,34 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
     static const char alterQueries[][128] =
     {
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS personaname VARCHAR(128) DEFAULT ''",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_scout INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_scout INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_sniper INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_sniper INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_soldier INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_soldier INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_demoman INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_demoman INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_medic INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_medic INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_heavy INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_heavy INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_pyro INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_pyro INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_spy INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_spy INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_engineer INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_engineer INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS best_weapon VARCHAR(64) DEFAULT ''",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS best_weapon_accuracy FLOAT DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_dealt INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS last_seen INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS is_admin TINYINT(1) DEFAULT 0"
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS is_admin TINYINT(1) DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS favorite_class TINYINT DEFAULT 0"
     };
 
     for (int i = 0; i < sizeof(alterQueries); i++)
@@ -2866,6 +3605,36 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS healing INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS headshots INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS backstabs INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_class_id TINYINT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_class_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_class_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_class_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon1_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon1_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon1_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon1_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon2_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon2_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon2_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon2_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon3_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon3_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon3_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon3_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon4_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon4_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon4_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon4_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon5_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon5_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon5_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon5_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon6_name VARCHAR(64) DEFAULT ''",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon6_accuracy FLOAT DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon6_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS weapon6_hits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS playtime INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS total_ubers INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
@@ -2937,6 +3706,21 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon3_hits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon3_damage INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon3_defindex INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon4_name VARCHAR(128) DEFAULT ''",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon4_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon4_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon4_damage INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon4_defindex INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon5_name VARCHAR(128) DEFAULT ''",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon5_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon5_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon5_damage INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon5_defindex INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon6_name VARCHAR(128) DEFAULT ''",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon6_shots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon6_hits INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon6_damage INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS weapon6_defindex INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS airshots_soldier INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS airshots_soldier_height INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS airshots_demoman INTEGER DEFAULT 0",
@@ -2972,6 +3756,7 @@ public void WhaleTracker_CreateOnlineTable(Database db, DBResultSet results, con
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to create online table: %s", error);
+        WT_HandleDatabaseError(error);
     }
 }
 
@@ -2980,6 +3765,7 @@ public void WhaleTracker_CreateLogsTable(Database db, DBResultSet results, const
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to create logs table: %s", error);
+        WT_HandleDatabaseError(error);
     }
 }
 
@@ -2988,6 +3774,7 @@ public void WhaleTracker_CreateLogPlayersTable(Database db, DBResultSet results,
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to create log players table: %s", error);
+        WT_HandleDatabaseError(error);
     }
 }
 
@@ -2996,6 +3783,7 @@ public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const c
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to alter table: %s", error);
+        WT_HandleDatabaseError(error);
     }
 }
 
@@ -3011,6 +3799,7 @@ public void WhaleTracker_AlterOptionalCallback(Database db, DBResultSet results,
         return;
     }
 
+    WT_HandleDatabaseError(error);
     LogError("[WhaleTracker] Failed optional table migration: %s", error);
 }
 
@@ -3020,6 +3809,8 @@ static void LoadClientStats(int client)
     {
         return;
     }
+
+    CancelLoadRetryTimer(client);
 
     char steamId[STEAMID64_LEN];
     if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
@@ -3033,13 +3824,29 @@ static void LoadClientStats(int client)
     strcopy(g_Stats[client].steamId, sizeof(g_Stats[client].steamId), steamId);
     strcopy(g_MapStats[client].steamId, sizeof(g_MapStats[client].steamId), steamId);
 
+    g_Stats[client].loaded = false;
+    g_MapStats[client].loaded = false;
+
     EnsureWeaponMaps(g_Stats[client]);
     EnsureWeaponMaps(g_MapStats[client]);
 
-    char query[512];
+    char escapedSteamId[STEAMID64_LEN * 2];
+    if (g_hDatabase != null)
+    {
+        SQL_EscapeString(g_hDatabase, steamId, escapedSteamId, sizeof(escapedSteamId));
+    }
+    else
+    {
+        strcopy(escapedSteamId, sizeof(escapedSteamId), steamId);
+    }
+
+    char query[1024];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, shots, hits, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_headshots_life, best_backstabs_life, best_kills_life, best_killstreak, best_score_life, assists, best_assists_life, playtime, best_weapon, best_weapon_accuracy, damage_dealt, damage_taken, last_seen, is_admin "
-        ... "FROM whaletracker WHERE steamid = '%s'", steamId);
+        "SELECT first_seen, kills, deaths, shots, hits, "
+        ... "shots_scout, hits_scout, shots_sniper, hits_sniper, shots_soldier, hits_soldier, shots_demoman, hits_demoman, "
+        ... "shots_medic, hits_medic, shots_heavy, hits_heavy, shots_pyro, hits_pyro, shots_spy, hits_spy, shots_engineer, hits_engineer, "
+        ... "healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_headshots_life, best_backstabs_life, best_kills_life, best_killstreak, best_score_life, assists, best_assists_life, playtime, best_weapon, best_weapon_accuracy, damage_dealt, damage_taken, last_seen, is_admin, favorite_class "
+        ... "FROM whaletracker WHERE steamid = '%s'", escapedSteamId);
 
     g_hDatabase.Query(WhaleTracker_LoadCallback, query, client);
 }
@@ -3052,48 +3859,69 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
         return;
     }
 
+    CancelLoadRetryTimer(index);
+
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to load stats for %N: %s", index, error);
+        WT_HandleDatabaseError(error);
+        ScheduleLoadRetry(index);
         return;
     }
 
-    if (results != null && results.FetchRow())
+    if (results == null || results.FieldCount <= 0)
     {
-        g_Stats[index].firstSeenTimestamp = results.FetchInt(0);
+        LogError("[WhaleTracker] Aborting load for %N: no result set returned.", index);
+        g_bDatabaseReady = false;
+        WT_ScheduleReconnect();
+        ScheduleLoadRetry(index);
+        return;
+    }
+
+    if (results.FetchRow())
+    {
+        int column = 0;
+        g_Stats[index].firstSeenTimestamp = results.FetchInt(column++);
         FormatTime(g_Stats[index].firstSeen, sizeof(g_Stats[index].firstSeen), "%Y-%m-%d", g_Stats[index].firstSeenTimestamp);
-        g_Stats[index].kills = results.FetchInt(1);
-        g_Stats[index].deaths = results.FetchInt(2);
-        g_Stats[index].totalShots = results.FetchInt(3);
-        g_Stats[index].totalHits = results.FetchInt(4);
-        g_Stats[index].totalHealing = results.FetchInt(5);
-        g_Stats[index].totalUbers = results.FetchInt(6);
-        g_Stats[index].bestUbersLife = results.FetchInt(7);
-        g_Stats[index].totalMedicDrops = results.FetchInt(8);
-        g_Stats[index].totalUberDrops = results.FetchInt(9);
-        g_Stats[index].totalAirshots = results.FetchInt(10);
-        g_Stats[index].totalHeadshots = results.FetchInt(11);
-        g_Stats[index].totalBackstabs = results.FetchInt(12);
-        g_Stats[index].bestHeadshotsLife = results.FetchInt(13);
-        g_Stats[index].bestBackstabsLife = results.FetchInt(14);
-        g_Stats[index].bestKillsLife = results.FetchInt(15);
-        g_Stats[index].bestKillstreak = results.FetchInt(16);
-        g_Stats[index].bestScoreLife = results.FetchInt(17);
-        g_Stats[index].totalAssists = results.FetchInt(18);
-        g_Stats[index].bestAssistsLife = results.FetchInt(19);
-        g_Stats[index].playtime = results.FetchInt(20);
-        results.FetchString(21, g_Stats[index].bestWeapon, sizeof(g_Stats[index].bestWeapon));
-        g_Stats[index].bestWeaponAccuracy = results.FetchFloat(22);
-        g_Stats[index].totalDamage = results.FetchInt(23);
-        g_Stats[index].totalDamageTaken = results.FetchInt(24);
-        g_Stats[index].lastSeen = results.FetchInt(25);
-        g_Stats[index].isAdmin = results.FetchInt(26) != 0;
+        g_Stats[index].kills = results.FetchInt(column++);
+        g_Stats[index].deaths = results.FetchInt(column++);
+        g_Stats[index].totalShots = results.FetchInt(column++);
+        g_Stats[index].totalHits = results.FetchInt(column++);
+        for (int classIndex = WT_CLASS_OFFSET; classIndex < (WT_CLASS_OFFSET + WT_CLASS_COUNT); classIndex++)
+        {
+            g_Stats[index].classShots[classIndex] = results.FetchInt(column++);
+            g_Stats[index].classHits[classIndex] = results.FetchInt(column++);
+        }
+        g_Stats[index].totalHealing = results.FetchInt(column++);
+        g_Stats[index].totalUbers = results.FetchInt(column++);
+        g_Stats[index].bestUbersLife = results.FetchInt(column++);
+        g_Stats[index].totalMedicDrops = results.FetchInt(column++);
+        g_Stats[index].totalUberDrops = results.FetchInt(column++);
+        g_Stats[index].totalAirshots = results.FetchInt(column++);
+        g_Stats[index].totalHeadshots = results.FetchInt(column++);
+        g_Stats[index].totalBackstabs = results.FetchInt(column++);
+        g_Stats[index].bestHeadshotsLife = results.FetchInt(column++);
+        g_Stats[index].bestBackstabsLife = results.FetchInt(column++);
+        g_Stats[index].bestKillsLife = results.FetchInt(column++);
+        g_Stats[index].bestKillstreak = results.FetchInt(column++);
+        g_Stats[index].bestScoreLife = results.FetchInt(column++);
+        g_Stats[index].totalAssists = results.FetchInt(column++);
+        g_Stats[index].bestAssistsLife = results.FetchInt(column++);
+        g_Stats[index].playtime = results.FetchInt(column++);
+        results.FetchString(column++, g_Stats[index].bestWeapon, sizeof(g_Stats[index].bestWeapon));
+        g_Stats[index].bestWeaponAccuracy = results.FetchFloat(column++);
+        g_Stats[index].totalDamage = results.FetchInt(column++);
+        g_Stats[index].totalDamageTaken = results.FetchInt(column++);
+        g_Stats[index].lastSeen = results.FetchInt(column++);
+        g_Stats[index].isAdmin = results.FetchInt(column++) != 0;
+        g_Stats[index].favoriteClass = results.FetchInt(column++);
         g_Stats[index].loaded = true;
         g_MapStats[index].loaded = true;
         g_MapStats[index].isAdmin = g_Stats[index].isAdmin;
         g_MapStats[index].bestWeaponAccuracy = g_Stats[index].bestWeaponAccuracy;
         strcopy(g_MapStats[index].bestWeapon, sizeof(g_MapStats[index].bestWeapon), g_Stats[index].bestWeapon);
         g_MapStats[index].totalUberDrops = g_Stats[index].totalUberDrops;
+        g_MapStats[index].favoriteClass = g_Stats[index].favoriteClass;
     }
     else
     {
@@ -3104,6 +3932,8 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
         g_MapStats[index].isAdmin = g_Stats[index].isAdmin;
         g_MapStats[index].bestWeaponAccuracy = g_Stats[index].bestWeaponAccuracy;
         g_MapStats[index].bestWeapon[0] = '\0';
+        g_Stats[index].favoriteClass = TFClass_Unknown;
+        g_MapStats[index].favoriteClass = TFClass_Unknown;
     }
 
     TouchClientLastSeen(index);
@@ -3182,15 +4012,17 @@ static bool SaveClientStats(int client, bool includeMapStats)
 
     if (!g_Stats[client].loaded)
     {
-        if (g_Stats[client].firstSeenTimestamp == 0)
-        {
-            g_Stats[client].firstSeenTimestamp = GetTime();
-            FormatTime(g_Stats[client].firstSeen, sizeof(g_Stats[client].firstSeen), "%Y-%m-%d", g_Stats[client].firstSeenTimestamp);
-        }
-        g_Stats[client].loaded = true;
+        LogError("[WhaleTracker] Refusing to save stats for %N because load failed earlier.", client);
+        ScheduleLoadRetry(client);
+        return false;
     }
 
-    g_MapStats[client].loaded = true;
+    if (!g_MapStats[client].loaded)
+    {
+        LogError("[WhaleTracker] Refusing to save map stats for %N because map stats not loaded.", client);
+        includeMapStats = false;
+        ScheduleLoadRetry(client);
+    }
 
     g_KillSaveCounter[client] = 0;
 
@@ -3198,6 +4030,7 @@ static bool SaveClientStats(int client, bool includeMapStats)
     RefreshBestWeaponAccuracy(g_Stats[client]);
     g_MapStats[client].bestWeaponAccuracy = g_Stats[client].bestWeaponAccuracy;
     strcopy(g_MapStats[client].bestWeapon, sizeof(g_MapStats[client].bestWeapon), g_Stats[client].bestWeapon);
+    g_MapStats[client].favoriteClass = g_Stats[client].favoriteClass;
 
     char escapedWeapon[128];
     EscapeSqlString(g_Stats[client].bestWeapon, escapedWeapon, sizeof(escapedWeapon));
@@ -3225,8 +4058,11 @@ static bool SaveClientStats(int client, bool includeMapStats)
     char query[SAVE_QUERY_MAXLEN];
     Format(query, sizeof(query),
         "REPLACE INTO whaletracker "
-        ... "(steamid, personaname, first_seen, kills, deaths, shots, hits, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_headshots_life, best_backstabs_life, best_kills_life, best_killstreak, best_score_life, assists, best_assists_life, playtime, best_weapon, best_weapon_accuracy, damage_dealt, damage_taken, last_seen, is_admin) "
-        ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, '%s', %.6f, %d, %d, %d, %d)",
+        ... "(steamid, personaname, first_seen, kills, deaths, shots, hits, "
+        ... "shots_scout, hits_scout, shots_sniper, hits_sniper, shots_soldier, hits_soldier, shots_demoman, hits_demoman, "
+        ... "shots_medic, hits_medic, shots_heavy, hits_heavy, shots_pyro, hits_pyro, shots_spy, hits_spy, shots_engineer, hits_engineer, "
+        ... "healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_headshots_life, best_backstabs_life, best_kills_life, best_killstreak, best_score_life, assists, best_assists_life, playtime, best_weapon, best_weapon_accuracy, damage_dealt, damage_taken, last_seen, is_admin, favorite_class) "
+        ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, '%s', %.6f, %d, %d, %d, %d, %d)",
         g_Stats[client].steamId,
         escapedName,
         g_Stats[client].firstSeenTimestamp,
@@ -3234,6 +4070,24 @@ static bool SaveClientStats(int client, bool includeMapStats)
         g_Stats[client].deaths,
         g_Stats[client].totalShots,
         g_Stats[client].totalHits,
+        g_Stats[client].classShots[TFClass_Scout],
+        g_Stats[client].classHits[TFClass_Scout],
+        g_Stats[client].classShots[TFClass_Sniper],
+        g_Stats[client].classHits[TFClass_Sniper],
+        g_Stats[client].classShots[TFClass_Soldier],
+        g_Stats[client].classHits[TFClass_Soldier],
+        g_Stats[client].classShots[TFClass_DemoMan],
+        g_Stats[client].classHits[TFClass_DemoMan],
+        g_Stats[client].classShots[TFClass_Medic],
+        g_Stats[client].classHits[TFClass_Medic],
+        g_Stats[client].classShots[TFClass_Heavy],
+        g_Stats[client].classHits[TFClass_Heavy],
+        g_Stats[client].classShots[TFClass_Pyro],
+        g_Stats[client].classHits[TFClass_Pyro],
+        g_Stats[client].classShots[TFClass_Spy],
+        g_Stats[client].classHits[TFClass_Spy],
+        g_Stats[client].classShots[TFClass_Engineer],
+        g_Stats[client].classHits[TFClass_Engineer],
         g_Stats[client].totalHealing,
         g_Stats[client].totalUbers,
         g_Stats[client].bestUbersLife,
@@ -3255,7 +4109,8 @@ static bool SaveClientStats(int client, bool includeMapStats)
         g_Stats[client].totalDamage,
         g_Stats[client].totalDamageTaken,
         g_Stats[client].lastSeen,
-        g_Stats[client].isAdmin ? 1 : 0);
+        g_Stats[client].isAdmin ? 1 : 0,
+        g_Stats[client].favoriteClass);
 
     int userId = GetClientUserId(client);
     QueueSaveQuery(query, userId, false);
@@ -3280,6 +4135,7 @@ public void WhaleTracker_SaveCallback(Database db, DBResultSet results, const ch
 
     if (error[0] != '\0')
     {
+        WT_HandleDatabaseError(error);
         int client = (userId > 0) ? GetClientOfUserId(userId) : 0;
 
         if (client > 0 && IsValidClient(client))
@@ -3376,6 +4232,9 @@ public Action OnPlayerTakeDamage(int victim, int &attacker, int &inflictor, floa
         return Plugin_Continue;
 
     if (damage <= 0.0)
+        return Plugin_Continue;
+
+    if (attacker == victim)
         return Plugin_Continue;
 
     int damageInt = RoundToFloor(damage);
@@ -3717,6 +4576,58 @@ static void SendMatchStatsMessage(int viewer, int target)
     CPrintToChat(viewer, "{green}[WhaleTracker]{default} Visit {gold}kogasa.tf/stats{default} for way more!");
 }
 
+public Action Command_SetFavoriteClass(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        ReplyToCommand(client, "[WhaleTracker] This command can only be used in-game.");
+        return Plugin_Handled;
+    }
+
+    if (args < 1)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Usage: !fav <scout|soldier|pyro|demo|demoman|heavy|medic|sniper|spy|engi|engineer|none>");
+        return Plugin_Handled;
+    }
+
+    char arg[32];
+    GetCmdArg(1, arg, sizeof(arg));
+    TrimString(arg);
+
+    TFClassType parsedClass;
+    if (!WT_ParseFavoriteClassArg(arg, parsedClass))
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Unknown class '%s'. Try scout, soldier, pyro, demo, heavy, medic, sniper, spy, engi, or none.", arg);
+        return Plugin_Handled;
+    }
+
+    g_Stats[client].favoriteClass = view_as<int>(parsedClass);
+    g_MapStats[client].favoriteClass = view_as<int>(parsedClass);
+
+    char className[32];
+    WT_GetClassDisplayName(parsedClass, className, sizeof(className));
+
+    if (parsedClass == TFClass_Unknown)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Favorite class cleared. Using best accuracy automatically.");
+    }
+    else
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Favorite class set to %s.", className);
+    }
+
+    if (g_Stats[client].loaded)
+    {
+        SaveClientStats(client, false);
+    }
+    else
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Stats are still loading; favorite will be saved once they finish loading.");
+    }
+
+    return Plugin_Handled;
+}
+
 public Action Command_ShowStats(int client, int args)
 {
     if (!IsValidClient(client) || IsFakeClient(client))
@@ -3758,7 +4669,7 @@ public Action Command_StartLog(int client, int args)
     }
 
     FinalizeCurrentMatch(false);
-    BeginMatchTracking();
+    BeginMatchTracking(true);
     ClearOnlineStats();
 
     if (client > 0 && IsClientInGame(client))
