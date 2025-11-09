@@ -472,6 +472,7 @@ function wt_build_page_url(int $page): string
     $totalPlayersAllTime = (int)($summary['totalPlayers'] ?? 0);
     $bestKillstreakWeek = (int)($summary['bestKillstreakWeek'] ?? 0);
     $bestKillstreakWeekOwner = $summary['bestKillstreakWeekOwner'] ?? null;
+    $bestKillstreakWeekLeaders = $summary['bestKillstreakWeekLeaders'] ?? [];
     $averageDpm = isset($summary['averageDpm']) ? (float)$summary['averageDpm'] : 0.0;
     $weeklyTopDpm = isset($summary['weeklyTopDpm']) ? (float)$summary['weeklyTopDpm'] : 0.0;
     $weeklyTopDpmOwner = $summary['weeklyTopDpmOwner'] ?? null;
@@ -692,14 +693,26 @@ function wt_build_page_url(int $page): string
                     </div>
                     <div class="stat-card stat-card-streak">
                         <h3>Best Killstreak / Week</h3>
-                        <?php if (!empty($bestKillstreakWeekOwner)): ?>
-                            <?php $owner = $bestKillstreakWeekOwner; ?>
-                            <div class="stat-card-player">
-                                <img src="<?= htmlspecialchars($owner['avatar'] ?? $defaultAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="">
-                                <div>
-                                    <div class="stat-card-value"><?= number_format($bestKillstreakWeek) ?></div>
-                                    <div class="stat-card-player-name"><?= htmlspecialchars($owner['personaname'] ?? $owner['steamid'], ENT_QUOTES, 'UTF-8') ?></div>
-                                </div>
+                        <?php if (!empty($bestKillstreakWeekLeaders)): ?>
+                            <div class="streak-podium">
+                                <?php foreach (array_slice($bestKillstreakWeekLeaders, 0, 3) as $index => $leader): ?>
+                                    <?php
+                                        $rank = $index + 1;
+                                        $entryClasses = 'streak-podium__entry streak-podium__entry--rank' . $rank;
+                                    ?>
+                                    <div class="<?= $entryClasses ?>">
+                                        <div class="streak-podium__avatar-wrap">
+                                            <img src="<?= htmlspecialchars($leader['avatar'] ?? $defaultAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="">
+                                            <span class="streak-podium__badge">#<?= $rank ?></span>
+                                        </div>
+                                        <div class="streak-podium__details">
+                                            <div class="streak-podium__name">
+                                                <?= htmlspecialchars($leader['personaname'] ?? ($leader['steamid'] ?? 'Unknown'), ENT_QUOTES, 'UTF-8') ?>
+                                            </div>
+                                            <div class="streak-podium__value"><?= number_format((int)($leader['best_streak'] ?? 0)) ?></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
                         <?php elseif ($bestKillstreakWeek > 0): ?>
                             <p><?= number_format($bestKillstreakWeek) ?></p>

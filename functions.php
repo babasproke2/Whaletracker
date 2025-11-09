@@ -1439,7 +1439,7 @@ function wt_summary_insights(): array
          INNER JOIN %s l ON l.log_id = lp.log_id
          WHERE l.started_at >= :start
          ORDER BY lp.best_streak DESC, lp.kills DESC, l.started_at DESC
-         LIMIT 1',
+         LIMIT 3',
         wt_log_players_table(),
         wt_logs_table()
     );
@@ -1448,26 +1448,52 @@ function wt_summary_insights(): array
     $stmt->execute([
         ':start' => $currentWeekStartTs,
     ]);
-    $weeklyKillstreakRow = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $weeklyKillstreakRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $weeklyKillstreak = 0;
     $weeklyKillstreakOwner = null;
-    if ($weeklyKillstreakRow && (int)($weeklyKillstreakRow['best_streak'] ?? 0) > 0) {
-        $weeklyKillstreak = (int)$weeklyKillstreakRow['best_streak'];
-        $ownerSteamId = (string)($weeklyKillstreakRow['steamid'] ?? '');
-        $ownerProfile = [];
-        if ($ownerSteamId !== '') {
-            $profiles = wt_fetch_steam_profiles([$ownerSteamId]);
-            $ownerProfile = $profiles[$ownerSteamId] ?? [];
+    $weeklyKillstreakLeaders = [];
+    if (!empty($weeklyKillstreakRows)) {
+        $steamIds = [];
+        foreach ($weeklyKillstreakRows as $row) {
+            $bestStreak = (int)($row['best_streak'] ?? 0);
+            if ($bestStreak <= 0) {
+                continue;
+            }
+            $steamId = (string)($row['steamid'] ?? '');
+            if ($steamId !== '') {
+                $steamIds[] = $steamId;
+            }
         }
 
-        $weeklyKillstreakOwner = [
-            'steamid' => $ownerSteamId,
-            'personaname' => $ownerProfile['personaname'] ?? ($weeklyKillstreakRow['personaname'] ?? $ownerSteamId),
-            'avatar' => $ownerProfile['avatarfull']
-                ?? ($ownerProfile['avatar'] ?? 'https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/fe/fef49e7fa7a3da7fd2e8a58905cfe144.png'),
-            'profileurl' => $ownerProfile['profileurl'] ?? null,
-        ];
+        $profiles = [];
+        if (!empty($steamIds)) {
+            $profiles = wt_fetch_steam_profiles(array_values(array_unique($steamIds)));
+        }
+
+        $defaultAvatar = 'https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/fe/fef49e7fa7a3da7fd2e8a58905cfe144.png';
+        foreach ($weeklyKillstreakRows as $row) {
+            $bestStreak = (int)($row['best_streak'] ?? 0);
+            if ($bestStreak <= 0) {
+                continue;
+            }
+            $steamId = (string)($row['steamid'] ?? '');
+            $profile = $steamId !== '' ? ($profiles[$steamId] ?? []) : [];
+            $weeklyKillstreakLeaders[] = [
+                'steamid' => $steamId,
+                'personaname' => $profile['personaname'] ?? ($row['personaname'] ?? ($steamId ?: 'Unknown')),
+                'avatar' => $profile['avatarfull']
+                    ?? ($profile['avatar'] ?? $defaultAvatar),
+                'profileurl' => $profile['profileurl'] ?? null,
+                'best_streak' => $bestStreak,
+                'kills' => (int)($row['kills'] ?? 0),
+            ];
+        }
+
+        if (!empty($weeklyKillstreakLeaders)) {
+            $weeklyKillstreak = $weeklyKillstreakLeaders[0]['best_streak'];
+            $weeklyKillstreakOwner = $weeklyKillstreakLeaders[0];
+        }
     }
 
     $weeklyTopDpm = 0.0;
@@ -1558,6 +1584,7 @@ function wt_summary_insights(): array
         'playersWeekTrend' => $weeklyTrend,
         'bestKillstreakWeek' => $weeklyKillstreak,
         'bestKillstreakWeekOwner' => $weeklyKillstreakOwner,
+        'bestKillstreakWeekLeaders' => $weeklyKillstreakLeaders,
         'weeklyTopDpm' => $weeklyTopDpm,
         'weeklyTopDpmOwner' => $weeklyTopDpmOwner,
         'gamemodeTop' => $gamemodeTop,
