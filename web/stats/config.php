@@ -16,4 +16,18 @@ define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '7FA5829F77ACA436B3E9826FC
 
 define('WT_STEAM_RETURN_URL', getenv('WT_STEAM_RETURN_URL'));
 
-define('WT_CACHE_TTL', 3600);
+// Cache TTL for profile lookups (seconds). Increase to 24h to reduce Steam API calls
+define('WT_CACHE_TTL', 24 * 3600);
+// Avatar images are cached locally for this many seconds
+define('WT_AVATAR_CACHE_TTL', 6 * 3600);
+
+// Bump when logs fragment markup changes to force static rebuilds
+define('WT_LOGS_FRAGMENT_VERSION', '20251115');
+
+// Secret used to obfuscate web client IP into a short tag; set in env WT_CHAT_IP_SECRET
+define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: 'vXo8#Q3Lk9m@Zt1DbR2n');
+
+// Default avatars served from this codebase (downloaded from Steam)
+define('WT_DEFAULT_AVATAR_URL', '/stats/assets/whaley-avatar.jpg');
+define('WT_SECONDARY_AVATAR_URL', '/stats/assets/whaley-avatar-2.jpg');
+define('WT_SERVER_AVATAR_URL', '/stats/assets/server-chat-avatar.jpg');

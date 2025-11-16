@@ -1,0 +1,16 @@
+<IfModule mod_headers.c>
+  <Files "background_product_pro.jpg">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header unset Pragma
+    Header unset Expires
+  </Files>
+</IfModule>
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType image/gif "access plus 1 year"
+  ExpiresByType text/css "access plus 1 day"
+  ExpiresByType image/png "access plus 1 day"
+  ExpiresByType image/jpeg "access plus 6 hours"
+  ExpiresByType image/jpg "access plus 6 hours"
+</IfModule>
