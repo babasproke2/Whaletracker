@@ -96,6 +96,17 @@ function renderMessageText(text) {
     return fragment;
 }
 
+function formatTimestamp(seconds) {
+    if (!seconds) {
+        return '';
+    }
+    const date = new Date(Number(seconds) * 1000);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function buildChatRow(entry) {
     const row = document.createElement('div');
     row.className = 'chat-row';
@@ -107,7 +118,15 @@ function buildChatRow(entry) {
     content.className = 'chat-content';
     const header = document.createElement('div');
     header.className = 'chat-header';
-    header.textContent = entry.name || 'Unknown';
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = entry.name || 'Unknown';
+    header.appendChild(nameSpan);
+    if (entry.created_at) {
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'chat-timestamp';
+        timeSpan.textContent = formatTimestamp(entry.created_at);
+        header.appendChild(timeSpan);
+    }
     const body = document.createElement('div');
     body.className = 'chat-body';
     body.appendChild(renderMessageText(entry.message));

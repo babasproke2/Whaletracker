@@ -1250,9 +1250,9 @@ static void QueueSaveQuery(const char[] query, int userId, bool forceSync)
 public Plugin myinfo =
 {
     name = "WhaleTracker",
-    author = "Codex",
-    description = "The Youkai Pound's player stats system",
-    version = "1.0.0",
+    author = "Hombre",
+    description = "Cumulative player stats system",
+    version = "1.0.1",
     url = "https://kogasa.tf"
 };
 
