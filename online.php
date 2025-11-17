@@ -9,28 +9,51 @@ $cacheKey = 'wt:online:latest';
 $cacheTtlSeconds = 300;
 $now = time();
 
+$weaponSelectParts = [];
+for ($slot = 1; $slot <= WT_MAX_WEAPON_SLOTS; $slot++) {
+    $weaponSelectParts[] = sprintf(
+        'weapon%d_name, weapon%d_accuracy, weapon%d_shots, weapon%d_hits',
+        $slot,
+        $slot,
+        $slot,
+        $slot
+    );
+}
+$weaponSelectSql = implode(', ', $weaponSelectParts);
+$weaponSelectClause = $weaponSelectSql !== '' ? ', ' . $weaponSelectSql : '';
+
+$classSelectParts = [];
+foreach (WT_CLASS_METADATA as $meta) {
+    $slug = $meta['slug'] ?? null;
+    if (!$slug) {
+        continue;
+    }
+    $classSelectParts[] = sprintf('shots_%s', $slug);
+    $classSelectParts[] = sprintf('hits_%s', $slug);
+}
+$classSelectSql = implode(', ', $classSelectParts);
+$classSelectClause = $classSelectSql !== '' ? ', ' . $classSelectSql : '';
+
 try {
     $pdo = wt_pdo();
-    $sqlExtended = 'SELECT steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits, '
-        . 'best_class_id, best_class_accuracy, best_class_shots, best_class_hits, '
-        . 'weapon1_name, weapon1_accuracy, weapon1_shots, weapon1_hits, '
-        . 'weapon2_name, weapon2_accuracy, weapon2_shots, weapon2_hits, '
-        . 'weapon3_name, weapon3_accuracy, weapon3_shots, weapon3_hits, '
-        . 'weapon4_name, weapon4_accuracy, weapon4_shots, weapon4_hits, '
-        . 'weapon5_name, weapon5_accuracy, weapon5_shots, weapon5_hits, '
-        . 'weapon6_name, weapon6_accuracy, weapon6_shots, weapon6_hits, '
+    wt_clear_online_cache_flag($pdo, $cacheKey);
+    $sqlExtended = sprintf(
+        'SELECT steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits%s%s, '
         . 'playtime, total_ubers, classes_mask, time_connected, visible_max, last_update '
-        . 'FROM whaletracker_online ORDER BY last_update DESC';
+        . 'FROM whaletracker_online ORDER BY last_update DESC',
+        $classSelectClause,
+        $weaponSelectClause
+    );
     try {
         $stmt = $pdo->query($sqlExtended);
     } catch (Throwable $e) {
-        $sqlLegacy = 'SELECT steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits, '
-            . 'best_class_id, best_class_accuracy, best_class_shots, best_class_hits, '
-            . 'weapon1_name, weapon1_accuracy, weapon1_shots, weapon1_hits, '
-            . 'weapon2_name, weapon2_accuracy, weapon2_shots, weapon2_hits, '
-            . 'weapon3_name, weapon3_accuracy, weapon3_shots, weapon3_hits, '
-            . 'playtime, total_ubers, classes_mask, time_connected, visible_max, last_update '
-            . 'FROM whaletracker_online ORDER BY last_update DESC';
+        $sqlLegacy = sprintf(
+            'SELECT steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, shots, hits%s%s, '
+            . 'playtime, total_ubers, time_connected, visible_max, last_update '
+            . 'FROM whaletracker_online ORDER BY last_update DESC',
+            $classSelectClause,
+            $weaponSelectClause
+        );
         $stmt = $pdo->query($sqlLegacy);
     }
     $players = $stmt->fetchAll();
@@ -67,10 +90,6 @@ try {
         unset($row['visible_max']);
         $row['shots'] = (int)($row['shots'] ?? 0);
         $row['hits'] = (int)($row['hits'] ?? 0);
-        $row['best_class_id'] = (int)($row['best_class_id'] ?? 0);
-        $row['best_class_accuracy'] = isset($row['best_class_accuracy']) ? (float)$row['best_class_accuracy'] : null;
-        $row['best_class_shots'] = (int)($row['best_class_shots'] ?? 0);
-        $row['best_class_hits'] = (int)($row['best_class_hits'] ?? 0);
         $steamId = (string)($row['steamid'] ?? '');
         if ($steamId !== '') {
             $steamIds[] = $steamId;
@@ -83,7 +102,7 @@ try {
         $steamIds = array_values(array_unique($steamIds));
         $profiles = wt_fetch_steam_profiles($steamIds);
         $adminFlags = wt_fetch_admin_flags($steamIds);
-        $defaultAvatar = 'https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/fe/fef49e7fa7a3da7fd2e8a58905cfe144.png';
+        $defaultAvatar = WT_DEFAULT_AVATAR_URL;
 
         foreach ($players as &$row) {
             $steamId = (string)($row['steamid'] ?? '');
@@ -105,28 +124,49 @@ try {
                 }
             }
 
-            $avatar = $profile['avatarfull'] ?? ($profile['avatar'] ?? null);
-            $row['avatar'] = $avatar ?? $defaultAvatar;
+            $avatar = ($profile['avatarfull'] ?? '') ?: ($profile['avatarmedium'] ?? '') ?: ($profile['avatar'] ?? '');
+            $row['avatar'] = $avatar ?: $defaultAvatar;
             $row['is_admin'] = !empty($adminFlags[$steamId]) ? 1 : (int)($row['is_admin'] ?? 0);
 
             $classSummary = [];
-            $bestClassId = (int)($row['best_class_id'] ?? 0);
-            $bestClassAccuracy = isset($row['best_class_accuracy']) ? (float)$row['best_class_accuracy'] : null;
-            $bestClassShots = (int)($row['best_class_shots'] ?? 0);
-            $bestClassHits = (int)($row['best_class_hits'] ?? 0);
-            if ($bestClassId > 0 && $bestClassAccuracy !== null && $bestClassShots > 0) {
-                $meta = WT_CLASS_METADATA[$bestClassId] ?? null;
-                $label = is_array($meta) ? ($meta['label'] ?? 'Class') : 'Class';
+            foreach (WT_CLASS_METADATA as $classId => $meta) {
+                $slug = $meta['slug'] ?? null;
+                if (!$slug) {
+                    continue;
+                }
+                $shotsKey = "shots_{$slug}";
+                $hitsKey = "hits_{$slug}";
+                $classShots = (int)($row[$shotsKey] ?? 0);
+                $classHits = (int)($row[$hitsKey] ?? 0);
+                unset($row[$shotsKey], $row[$hitsKey]);
+                if ($classShots <= 0) {
+                    continue;
+                }
+                $accuracy = ($classShots > 0) ? ($classHits / max($classShots, 1) * 100.0) : null;
+                $label = $meta['label'] ?? ucfirst($slug);
                 $classSummary[] = [
                     'label' => $label,
-                    'accuracy' => $bestClassAccuracy,
-                    'shots' => $bestClassShots,
-                    'hits' => $bestClassHits,
+                    'slug' => $slug,
+                    'accuracy' => $accuracy,
+                    'shots' => $classShots,
+                    'hits' => $classHits,
                 ];
+            }
+            if (empty($classSummary)) {
+                $totalShots = (int)($row['shots'] ?? 0);
+                $totalHits = (int)($row['hits'] ?? 0);
+                if ($totalShots > 0) {
+                    $classSummary[] = [
+                        'label' => 'Overall',
+                        'accuracy' => ($totalHits / max($totalShots, 1)) * 100.0,
+                        'shots' => $totalShots,
+                        'hits' => $totalHits,
+                    ];
+                }
             }
 
             $weaponSummary = [];
-            for ($slot = 1; $slot <= 6; $slot++) {
+            for ($slot = 1; $slot <= WT_MAX_WEAPON_SLOTS; $slot++) {
                 $name = trim((string)($row[sprintf('weapon%d_name', $slot)] ?? ''));
                 $accuracy = $row[sprintf('weapon%d_accuracy', $slot)] ?? null;
                 $shotsValue = (int)($row[sprintf('weapon%d_shots', $slot)] ?? 0);
@@ -143,10 +183,20 @@ try {
             }
 
             $row['class_accuracy_summary'] = $classSummary;
+            $row['active_class_accuracy'] = null;
+            $activeClass = (int)($row['class'] ?? 0);
+            if ($activeClass > 0 && isset(WT_CLASS_METADATA[$activeClass])) {
+                $activeSlug = WT_CLASS_METADATA[$activeClass]['slug'];
+                foreach ($classSummary as $entry) {
+                    if (($entry['slug'] ?? '') === $activeSlug) {
+                        $row['active_class_accuracy'] = $entry;
+                        break;
+                    }
+                }
+            }
             $row['weapon_accuracy_summary'] = $weaponSummary;
 
-            unset($row['best_class_id'], $row['best_class_accuracy'], $row['best_class_shots'], $row['best_class_hits']);
-            for ($slot = 1; $slot <= 6; $slot++) {
+            for ($slot = 1; $slot <= WT_MAX_WEAPON_SLOTS; $slot++) {
                 unset($row[sprintf('weapon%d_name', $slot)], $row[sprintf('weapon%d_accuracy', $slot)], $row[sprintf('weapon%d_shots', $slot)], $row[sprintf('weapon%d_hits', $slot)]);
             }
         }
