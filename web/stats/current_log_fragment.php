@@ -3,7 +3,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
 
 try {
-    $logs = wt_fetch_logs(1);
+    $logs = wt_fetch_logs(1, 'all');
     $html = '';
     ob_start();
     include __DIR__ . '/templates/current_log_fragment.php';

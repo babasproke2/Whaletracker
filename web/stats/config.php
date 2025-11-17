@@ -27,6 +27,13 @@ define('WT_LOGS_FRAGMENT_VERSION', '20251115');
 // Secret used to obfuscate web client IP into a short tag; set in env WT_CHAT_IP_SECRET
 define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: 'vXo8#Q3Lk9m@Zt1DbR2n');
 
+// Logs caching + pagination controls
+define('WT_LOGS_TOTAL_LIMIT', (int)(getenv('WT_LOGS_TOTAL_LIMIT') ?: 60));
+define('WT_LOGS_PAGE_SIZE', (int)(getenv('WT_LOGS_PAGE_SIZE') ?: 15));
+
+// Base URL for TF2 class icons used across the UI
+define('WT_CLASS_ICON_BASE', getenv('WT_CLASS_ICON_BASE') ?: '/leaderboard/');
+
 // Default avatars served from this codebase (downloaded from Steam)
 define('WT_DEFAULT_AVATAR_URL', '/stats/assets/whaley-avatar.jpg');
 define('WT_SECONDARY_AVATAR_URL', '/stats/assets/whaley-avatar-2.jpg');

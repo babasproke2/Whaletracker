@@ -146,6 +146,7 @@ try {
                 $label = $meta['label'] ?? ucfirst($slug);
                 $classSummary[] = [
                     'label' => $label,
+                    'slug' => $slug,
                     'accuracy' => $accuracy,
                     'shots' => $classShots,
                     'hits' => $classHits,
@@ -182,6 +183,17 @@ try {
             }
 
             $row['class_accuracy_summary'] = $classSummary;
+            $row['active_class_accuracy'] = null;
+            $activeClass = (int)($row['class'] ?? 0);
+            if ($activeClass > 0 && isset(WT_CLASS_METADATA[$activeClass])) {
+                $activeSlug = WT_CLASS_METADATA[$activeClass]['slug'];
+                foreach ($classSummary as $entry) {
+                    if (($entry['slug'] ?? '') === $activeSlug) {
+                        $row['active_class_accuracy'] = $entry;
+                        break;
+                    }
+                }
+            }
             $row['weapon_accuracy_summary'] = $weaponSummary;
 
             for ($slot = 1; $slot <= WT_MAX_WEAPON_SLOTS; $slot++) {

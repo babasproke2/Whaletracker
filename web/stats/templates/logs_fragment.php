@@ -74,11 +74,57 @@
                             $airshots = (int)($player['airshots'] ?? 0);
                             $shots = (int)($player['shots'] ?? 0);
                             $hits = (int)($player['hits'] ?? 0);
+                            $classAccuracySummary = $player['class_accuracy_summary'] ?? [];
+                            $preferredAccuracy = null;
+                            if (is_array($classAccuracySummary) && !empty($classAccuracySummary)) {
+                                foreach ($classAccuracySummary as $entry) {
+                                    if (!is_array($entry)) {
+                                        continue;
+                                    }
+                                    $entryShots = (int)($entry['shots'] ?? 0);
+                                    if ($entryShots <= 0) {
+                                        continue;
+                                    }
+                                    if ($preferredAccuracy === null || $entryShots > (int)($preferredAccuracy['shots'] ?? 0)) {
+                                        $preferredAccuracy = $entry;
+                                    }
+                                }
+                                if ($preferredAccuracy === null) {
+                                    $preferredAccuracy = $classAccuracySummary[0];
+                                }
+                            }
+                            if ($preferredAccuracy === null && $shots > 0) {
+                                $preferredAccuracy = [
+                                    'label' => 'Overall',
+                                    'slug' => 'overall',
+                                    'shots' => $shots,
+                                    'hits' => $hits,
+                                    'accuracy' => $shots > 0 ? ($hits / max($shots, 1) * 100.0) : null,
+                                ];
+                            }
+                            $accuracyDisplay = '—';
+                            $accuracyTitle = 'Accuracy unavailable';
+                            $accuracyIcon = null;
+                            $accuracyAlt = null;
+                            if (is_array($preferredAccuracy)) {
+                                $prefShots = (int)($preferredAccuracy['shots'] ?? 0);
+                                $prefHits = (int)($preferredAccuracy['hits'] ?? 0);
+                                $prefAccuracy = $preferredAccuracy['accuracy'] ?? ($prefShots > 0 ? ($prefHits / max($prefShots, 1) * 100.0) : null);
+                                if ($prefShots > 0) {
+                                    $accuracyDisplay = $prefAccuracy !== null ? number_format((float)$prefAccuracy, 1) . '%' : '—';
+                                    $accuracyTitle = sprintf('%s (%s/%s)', $accuracyDisplay, number_format($prefShots), number_format($prefHits));
+                                }
+                                $accuracySlug = $preferredAccuracy['slug'] ?? null;
+                                if ($accuracySlug && $accuracySlug !== 'overall') {
+                                    $accuracyIcon = wt_class_icon_url($accuracySlug);
+                                    $meta = wt_class_meta_by_slug($accuracySlug);
+                                    $accuracyAlt = $meta['label'] ?? ucfirst($accuracySlug);
+                                }
+                            }
                             $minutes = $playtime > 0 ? ($playtime / 60.0) : 0.0;
                             $kdValue = $deaths > 0 ? $kills / $deaths : $kills;
                             $dpm = $minutes > 0 ? ($damage / $minutes) : $damage;
                             $dtpm = $minutes > 0 ? ($damageTaken / $minutes) : $damageTaken;
-                            $accuracy = $shots > 0 ? ($hits / max($shots, 1)) * 100.0 : null;
                             ?>
                             <tr>
                                 <td class="player-cell">
@@ -94,7 +140,16 @@
                                 <td><?= number_format($kills) ?></td>
                                 <td><?= number_format($deaths) ?></td>
                                 <td><?= number_format($kdValue, 2) ?></td>
-                                <td><?= $accuracy !== null ? number_format($accuracy, 1) . '%' : '—' ?></td>
+                                <td class="log-accuracy-cell">
+                                    <span class="log-accuracy">
+                                        <?php if ($accuracyIcon): ?>
+                                            <img class="online-class-icon" src="<?= htmlspecialchars($accuracyIcon, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($accuracyAlt ?? '', ENT_QUOTES, 'UTF-8') ?>">
+                                        <?php endif; ?>
+                                        <span class="log-accuracy-value"<?= $accuracyTitle ? ' title="' . htmlspecialchars($accuracyTitle, ENT_QUOTES, 'UTF-8') . '"' : '' ?>>
+                                            <?= htmlspecialchars($accuracyDisplay, ENT_QUOTES, 'UTF-8') ?>
+                                        </span>
+                                    </span>
+                                </td>
                                 <td><?= number_format($damage) ?></td>
                                 <td><?= number_format($dpm, 1) ?></td>
                                 <td><?= number_format($dtpm, 1) ?></td>

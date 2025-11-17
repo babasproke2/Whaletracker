@@ -1252,7 +1252,7 @@ public Plugin myinfo =
     name = "WhaleTracker",
     author = "Hombre",
     description = "Cumulative player stats system",
-    version = "1.0.1",
+    version = "1.0.3",
     url = "https://kogasa.tf"
 };
 

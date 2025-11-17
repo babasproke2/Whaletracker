@@ -66,8 +66,9 @@ $tabRevision = $tabRevision ?? null;
                 <span class="tab-button-label tab-button-label--mobile">Logs</span>
             </a>
             <a class="tab-button <?= $activePage === 'chat' ? 'active' : '' ?>" href="/stats/chat/">
-                <span class="tab-button-label tab-button-label--desktop">Live Chat</span>
+                <span class="tab-button-label tab-button-label--desktop">Chat</span>
                 <span class="tab-button-label tab-button-label--mobile">Chat</span>
+                <span class="tab-button-count" id="nav-chat-label" aria-live="polite">Last msg. --</span>
             </a>
             <?php if (!empty($tabRevision)): ?>
                 <span class="tab-hash" title="Build Hash">#<?= htmlspecialchars($tabRevision, ENT_QUOTES, 'UTF-8') ?></span>

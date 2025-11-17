@@ -119,7 +119,13 @@ function buildChatRow(entry) {
     const header = document.createElement('div');
     header.className = 'chat-header';
     const nameSpan = document.createElement('span');
-    nameSpan.textContent = entry.name || 'Unknown';
+    const nameContent = entry.name || 'Unknown';
+    const nameFragment = renderMessageText(nameContent);
+    if (nameFragment && nameFragment.childNodes.length > 0) {
+        nameSpan.appendChild(nameFragment);
+    } else {
+        nameSpan.textContent = nameContent;
+    }
     header.appendChild(nameSpan);
     if (entry.created_at) {
         const timeSpan = document.createElement('span');

@@ -1,24 +1,26 @@
 (() => {
   const container = document.getElementById('logs-container');
   const emptyState = document.getElementById('logs-empty');
-  const toggleSmall = document.getElementById('logs-toggle-small');
   const toggleOld = document.getElementById('logs-toggle-old');
   const refreshBtn = document.getElementById('logs-refresh');
   if (!container) return;
 
-  let showSmall = false;
   let showOld = true;
-  const SMALL_LIMIT = 12;
   const fragmentUrl = container.dataset.fragment || 'logs_fragment.php';
+  const scope = container.dataset.scope || 'regular';
 
   const applyFilters = () => {
     const entries = container.querySelectorAll('.log-entry');
     let visible = 0;
-    entries.forEach((entry, index) => {
-      const count = Number(entry.dataset.playerCount || 0);
+    entries.forEach(entry => {
       let hide = false;
-      if (!showSmall && index !== 0 && count < SMALL_LIMIT) hide = true;
-      if (!showOld && index > 0) hide = true;
+      if (!showOld) {
+        const startedAt = Number(entry.dataset.startedAt || 0);
+        if (startedAt > 0) {
+          const now = Math.floor(Date.now() / 1000);
+          if ((now - startedAt) > 86400 * 2) hide = true;
+        }
+      }
       entry.style.display = hide ? 'none' : '';
       if (!hide) visible++;
     });
@@ -28,7 +30,8 @@
   };
 
   const fetchFragment = () => {
-    fetch(`${fragmentUrl}?limit=60&t=${Date.now()}`)
+    const url = `${fragmentUrl}?limit=60&scope=${encodeURIComponent(scope)}&t=${Date.now()}`;
+    fetch(url)
       .then(resp => {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.text();
@@ -46,12 +49,7 @@
       });
   };
 
-  if (refreshBtn) refreshBtn.addEventListener('click', fetchFragment);
-  if (toggleSmall) toggleSmall.addEventListener('click', () => {
-    showSmall = !showSmall;
-    toggleSmall.textContent = showSmall ? 'Hide <12 Player Logs' : 'Show <12 Player Logs';
-    applyFilters();
-  });
+  if (refreshBtn) refreshBtn.addEventListener('click', () => fetchFragment());
   if (toggleOld) toggleOld.addEventListener('click', () => {
     showOld = !showOld;
     toggleOld.textContent = showOld ? 'Hide Old' : 'Show Old';

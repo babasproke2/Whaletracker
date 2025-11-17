@@ -16,6 +16,33 @@ const WT_CLASS_METADATA = [
 
 const WT_MAX_WEAPON_SLOTS = 3;
 
+function wt_class_meta_by_slug(?string $slug): ?array
+{
+    if ($slug === null || $slug === '') {
+        return null;
+    }
+    foreach (WT_CLASS_METADATA as $meta) {
+        if (($meta['slug'] ?? null) === $slug) {
+            return $meta;
+        }
+    }
+    return null;
+}
+
+function wt_class_icon_url(?string $slug): ?string
+{
+    $meta = wt_class_meta_by_slug($slug);
+    if (!$meta) {
+        return null;
+    }
+    $icon = $meta['icon'] ?? null;
+    if (!$icon) {
+        return null;
+    }
+    $base = defined('WT_CLASS_ICON_BASE') ? WT_CLASS_ICON_BASE : '/leaderboard/';
+    return rtrim($base, '/') . '/' . ltrim($icon, '/');
+}
+
 function wt_avatar_for_hash(?string $hash): string
 {
     if (!$hash) {
@@ -28,6 +55,78 @@ function wt_avatar_for_hash(?string $hash): string
     }
 
     return WT_SECONDARY_AVATAR_URL;
+}
+
+function wt_logs_small_threshold(): int
+{
+    static $threshold;
+    if ($threshold !== null) {
+        return $threshold;
+    }
+    $value = 12;
+    if (defined('WT_LOGS_SMALL_THRESHOLD')) {
+        $value = (int)WT_LOGS_SMALL_THRESHOLD;
+    } else {
+        $env = getenv('WT_LOGS_SMALL_THRESHOLD');
+        if ($env !== false && $env !== '') {
+            $value = (int)$env;
+        }
+    }
+    $threshold = max(1, $value);
+    return $threshold;
+}
+
+function wt_logs_normalize_scope(?string $scope): string
+{
+    $scope = strtolower(trim((string)$scope));
+    if ($scope === 'short') {
+        return 'short';
+    }
+    if ($scope === 'all') {
+        return 'all';
+    }
+    return 'regular';
+}
+
+function wt_logs_scope_bounds(string $scope): array
+{
+    $scope = wt_logs_normalize_scope($scope);
+    $threshold = wt_logs_small_threshold();
+    switch ($scope) {
+        case 'short':
+            return ['min' => 1, 'max' => max(1, $threshold - 1)];
+        case 'regular':
+            return ['min' => $threshold, 'max' => null];
+        case 'all':
+        default:
+            return ['min' => 1, 'max' => null];
+    }
+}
+
+function wt_update_cached_personaname(string $steamId, ?string $personaname): void
+{
+    $steamId = trim($steamId);
+    if ($steamId === '') {
+        return;
+    }
+    $pdo = wt_pdo();
+    $lower = null;
+    if ($personaname !== null && $personaname !== '') {
+        $lower = function_exists('mb_strtolower') ? mb_strtolower($personaname, 'UTF-8') : strtolower($personaname);
+    }
+    $sql = sprintf(
+        'UPDATE %s SET cached_personaname = :persona, cached_personaname_lower = :lower WHERE steamid = :steamid',
+        WT_DB_TABLE
+    );
+    $stmt = $pdo->prepare($sql);
+    $stmt->bindValue(':persona', $personaname, $personaname === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+    $stmt->bindValue(':lower', $lower, $lower === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+    $stmt->bindValue(':steamid', $steamId, PDO::PARAM_STR);
+    try {
+        $stmt->execute();
+    } catch (Throwable $e) {
+        // Ignore write failures; caching is best-effort.
+    }
 }
 
 function wt_pdo(): PDO
@@ -750,17 +849,30 @@ function wt_refresh_current_log(): void
     ]);
 }
 
-function wt_fetch_logs(int $limit = 60): array
+function wt_fetch_logs(int $limit = 60, string $scope = 'regular'): array
 {
     $limit = max(1, min($limit, 100));
+    $scope = wt_logs_normalize_scope($scope);
+    $bounds = wt_logs_scope_bounds($scope);
+    $minPlayers = $bounds['min'] ?? null;
+    $maxPlayers = $bounds['max'] ?? null;
 
     wt_refresh_current_log();
 
     $fetchLimit = min($limit * 3, 300);
+    $whereParts = ['player_count > 0'];
+    if ($minPlayers !== null && $minPlayers > 1) {
+        $whereParts[] = 'player_count >= ' . (int)$minPlayers;
+    }
+    if ($maxPlayers !== null && $maxPlayers >= 1) {
+        $whereParts[] = 'player_count <= ' . (int)$maxPlayers;
+    }
+    $whereClause = implode(' AND ', $whereParts);
 
     $sql = sprintf(
-        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s WHERE player_count > 0 ORDER BY started_at DESC LIMIT %d',
+        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s WHERE %s ORDER BY started_at DESC LIMIT %d',
         wt_logs_table(),
+        $whereClause,
         $fetchLimit
     );
 
@@ -780,12 +892,21 @@ function wt_fetch_logs(int $limit = 60): array
     }
     unset($log);
 
-    $logs = array_values(array_filter($logs, static function ($log) {
+    $logs = array_values(array_filter($logs, static function ($log) use ($minPlayers, $maxPlayers) {
         $count = (int)($log['player_count'] ?? 0);
         if ($count <= 0 && !empty($log['players']) && is_array($log['players'])) {
             $count = count($log['players']);
         }
-        return $count > 0;
+        if ($count <= 0) {
+            return false;
+        }
+        if ($minPlayers !== null && $count < $minPlayers) {
+            return false;
+        }
+        if ($maxPlayers !== null && $count > $maxPlayers) {
+            return false;
+        }
+        return true;
     }));
 
     if (count($logs) > $limit) {
@@ -1059,6 +1180,7 @@ function wt_fetch_profiles_from_api(array $steamIds): array
 
             wt_refresh_profile_avatar($normalized, $profile);
             wt_write_cached_profile($normalized, $profile);
+            wt_update_cached_personaname($normalized, $profile['personaname'] ?? $normalized);
 
             $results[$normalized] = $profile;
         }
@@ -1088,15 +1210,45 @@ function wt_fetch_steam_profiles(array $steamIds): array
     }
 
     $profiles = [];
-    $pending = $normalizedMap;
+    $pending = [];
 
-    if (WT_STEAM_API_KEY !== '') {
-        $apiProfiles = wt_fetch_profiles_from_api(array_keys($normalizedMap));
+    $assignCachedProfile = static function (string $normalized, array $originals, array $cached) use (&$profiles): void {
+        $avatarUrl = (string)($cached['avatarfull'] ?? '');
+        if ($avatarUrl !== '' && strncmp($avatarUrl, '/stats/cache/', 13) === 0) {
+            $basename = basename($avatarUrl);
+            if (!$basename || !wt_avatar_cache_is_fresh($basename)) {
+                $source = $cached['avatar_source'] ?? null;
+                if ($source) {
+                    $downloaded = wt_avatar_cache_download($normalized, $source, $cached['avatar_cached'] ?? null);
+                    if ($downloaded) {
+                        $cached['avatar_cached'] = $downloaded;
+                        $cached['avatarfull'] = wt_avatar_cache_url_from_basename($downloaded);
+                        wt_write_cached_profile($normalized, $cached);
+                    }
+                }
+            }
+        }
+        foreach ($originals as $original) {
+            $profiles[$original] = $cached;
+        }
+    };
+
+    foreach ($normalizedMap as $normalized => $originals) {
+        $cached = wt_read_cached_profile($normalized);
+        if ($cached !== null) {
+            $assignCachedProfile($normalized, $originals, $cached);
+            continue;
+        }
+        $pending[$normalized] = $originals;
+    }
+
+    if (!empty($pending) && WT_STEAM_API_KEY !== '') {
+        $apiProfiles = wt_fetch_profiles_from_api(array_keys($pending));
         foreach ($apiProfiles as $normalized => $profile) {
-            if (!isset($normalizedMap[$normalized])) {
+            if (empty($pending[$normalized])) {
                 continue;
             }
-            foreach ($normalizedMap[$normalized] as $original) {
+            foreach ($pending[$normalized] as $original) {
                 $profiles[$original] = $profile;
             }
             unset($pending[$normalized]);
@@ -1106,24 +1258,7 @@ function wt_fetch_steam_profiles(array $steamIds): array
     foreach ($pending as $normalized => $originals) {
         $cached = wt_read_cached_profile($normalized);
         if ($cached !== null) {
-            $avatarUrl = (string)($cached['avatarfull'] ?? '');
-            if ($avatarUrl !== '' && strncmp($avatarUrl, '/stats/cache/', 13) === 0) {
-                $basename = basename($avatarUrl);
-                if (!$basename || !wt_avatar_cache_is_fresh($basename)) {
-                    $source = $cached['avatar_source'] ?? null;
-                    if ($source) {
-                        $downloaded = wt_avatar_cache_download($normalized, $source, $cached['avatar_cached'] ?? null);
-                        if ($downloaded) {
-                            $cached['avatar_cached'] = $downloaded;
-                            $cached['avatarfull'] = wt_avatar_cache_url_from_basename($downloaded);
-                            wt_write_cached_profile($normalized, $cached);
-                        }
-                    }
-                }
-            }
-            foreach ($originals as $original) {
-                $profiles[$original] = $cached;
-            }
+            $assignCachedProfile($normalized, $originals, $cached);
             continue;
         }
 
@@ -1134,6 +1269,7 @@ function wt_fetch_steam_profiles(array $steamIds): array
             'avatarfull' => WT_DEFAULT_AVATAR_URL,
             'avatar_source' => null,
         ];
+        wt_update_cached_personaname($normalized, $fallback['personaname']);
         foreach ($originals as $original) {
             $profiles[$original] = $fallback;
         }
@@ -1539,27 +1675,42 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
     $search = $search !== null ? trim($search) : '';
 
     if ($search !== '') {
-        $allStats = wt_fetch_all_stats();
-        if (empty($allStats)) {
+        $searchLower = function_exists('mb_strtolower') ? mb_strtolower($search, 'UTF-8') : strtolower($search);
+        $likeTerm = '%' . $searchLower . '%';
+        $steamLike = '%' . $search . '%';
+        $countSql = sprintf(
+            'SELECT COUNT(*) FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact',
+            WT_DB_TABLE
+        );
+        $countStmt = $pdo->prepare($countSql);
+        $countStmt->bindValue(':term', $likeTerm, PDO::PARAM_STR);
+        $countStmt->bindValue(':steam', $steamLike, PDO::PARAM_STR);
+        $countStmt->bindValue(':exact', $search, PDO::PARAM_STR);
+        $countStmt->execute();
+        $total = (int)($countStmt->fetchColumn() ?: 0);
+        if ($total === 0) {
             return ['rows' => [], 'total' => 0];
         }
 
-        $profiles = wt_fetch_steam_profiles(array_column($allStats, 'steamid'));
-        $allStats = wt_stats_with_profiles($allStats, $profiles);
+        $sql = sprintf(
+            'SELECT * FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact ORDER BY (kills + assists) DESC, kills DESC LIMIT :limit OFFSET :offset',
+            WT_DB_TABLE
+        );
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':term', $likeTerm, PDO::PARAM_STR);
+        $stmt->bindValue(':steam', $steamLike, PDO::PARAM_STR);
+        $stmt->bindValue(':exact', $search, PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
 
-        usort($allStats, static function ($a, $b) {
-            $scoreA = $a['score_total'] ?? (($a['kills'] ?? 0) + ($a['assists'] ?? 0));
-            $scoreB = $b['score_total'] ?? (($b['kills'] ?? 0) + ($b['assists'] ?? 0));
-            if ($scoreA !== $scoreB) {
-                return $scoreB <=> $scoreA;
-            }
+        if (empty($rows)) {
+            return ['rows' => [], 'total' => $total];
+        }
 
-            return ($b['kills'] ?? 0) <=> ($a['kills'] ?? 0);
-        });
-
-        $filtered = wt_filter_stats($allStats, $search);
-        $total = count($filtered);
-        $rows = array_slice($filtered, $offset, $limit);
+        $profiles = wt_fetch_steam_profiles(array_column($rows, 'steamid'));
+        $rows = wt_stats_with_profiles($rows, $profiles);
 
         return [
             'rows' => $rows,
@@ -2114,10 +2265,11 @@ function wt_render_logs_fragment(array $context): string
     return ob_get_clean();
 }
 
-function wt_get_cached_logs(int $limit = 60): array
+function wt_get_cached_logs(int $limit = 60, string $scope = 'regular'): array
 {
     $limit = max(1, min($limit, 100));
-    $key = sha1('limit:' . $limit);
+    $scope = wt_logs_normalize_scope($scope);
+    $key = sha1('limit:' . $limit . ':scope:' . $scope);
     $revision = wt_logs_revision();
     $cached = wt_fragment_load('logs', $key, $revision);
     if ($cached) {
@@ -2125,7 +2277,7 @@ function wt_get_cached_logs(int $limit = 60): array
         return $cached;
     }
 
-    $logs = wt_fetch_logs($limit);
+    $logs = wt_fetch_logs($limit, $scope);
     $context = [
         'logs' => $logs,
     ];
@@ -2134,6 +2286,7 @@ function wt_get_cached_logs(int $limit = 60): array
         'html' => $html,
         'logs' => $logs,
         'limit' => $limit,
+        'scope' => $scope,
         'revision' => $revision,
     ];
     wt_fragment_save('logs', $key, $revision, $payload);
@@ -2141,33 +2294,71 @@ function wt_get_cached_logs(int $limit = 60): array
     return $payload;
 }
 
-function wt_static_logs_paths(int $limit): array
+function wt_static_logs_paths(int $limit, string $scope = 'regular'): array
 {
     $dir = wt_static_cache_dir();
-    $base = $dir . '/logs-limit' . $limit;
+    $scope = wt_logs_normalize_scope($scope);
+    $suffix = $scope !== 'regular' ? '-' . $scope : '';
+    $base = $dir . '/logs-limit' . $limit . $suffix;
+    $pagesDir = $base . '-pages';
+    if (!is_dir($pagesDir)) {
+        mkdir($pagesDir, 0755, true);
+    }
     return [
-        'html' => $base . '.html',
+        'pages_dir' => $pagesDir,
         'meta' => $base . '.json',
     ];
 }
 
-function wt_build_static_logs(int $limit = 60): array
+function wt_build_static_logs(int $limit = 60, string $scope = 'regular'): array
 {
-    $data = wt_get_cached_logs($limit);
-    $paths = wt_static_logs_paths($limit);
-    file_put_contents($paths['html'], $data['html'] ?? '');
+    $scope = wt_logs_normalize_scope($scope);
+    $data = wt_get_cached_logs($limit, $scope);
+    $paths = wt_static_logs_paths($limit, $scope);
+    $pagesDir = $paths['pages_dir'];
+
+    foreach (glob($pagesDir . '/*.html') ?: [] as $file) {
+        @unlink($file);
+    }
+
+    $logs = $data['logs'] ?? [];
+    $totalLogs = is_array($logs) ? count($logs) : 0;
+    $perPage = defined('WT_LOGS_PAGE_SIZE') ? max(1, (int)WT_LOGS_PAGE_SIZE) : 15;
+    $chunks = array_chunk($logs, $perPage);
+    if (empty($chunks)) {
+        $chunks = [[]];
+    }
+
+    $page = 1;
+    $writtenPages = [];
+    foreach ($chunks as $chunk) {
+        $html = wt_render_logs_fragment(['logs' => $chunk]);
+        $pagePath = $pagesDir . '/page-' . $page . '.html';
+        file_put_contents($pagePath, $html);
+        $writtenPages[$page] = basename($pagePath);
+        $page++;
+    }
+
     $meta = [
         'generated_at' => time(),
         'revision' => $data['revision'] ?? null,
         'limit' => $limit,
         'template_version' => defined('WT_LOGS_FRAGMENT_VERSION') ? WT_LOGS_FRAGMENT_VERSION : '0',
+        'per_page' => $perPage,
+        'total_logs' => $totalLogs,
+        'total_pages' => count($writtenPages) ?: 1,
+        'scope' => $scope,
     ];
     file_put_contents($paths['meta'], json_encode($meta));
+
     return [
-        'html_path' => $paths['html'],
+        'pages_dir' => $pagesDir,
         'meta_path' => $paths['meta'],
         'revision' => $data['revision'] ?? null,
         'limit' => $limit,
+        'total_pages' => $meta['total_pages'],
+        'per_page' => $perPage,
+        'scope' => $scope,
     ];
 }
 

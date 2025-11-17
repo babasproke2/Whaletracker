@@ -5,7 +5,6 @@ $search = trim($_GET['q'] ?? '');
 $focusedPlayer = $_GET['player'] ?? null;
 $perPage = 50;
 $page = max(1, (int)($_GET['page'] ?? 1));
-$offset = ($page - 1) * $perPage;
 
 $summaryCache = wt_get_cached_summary();
 $summary = $summaryCache['summary'] ?? [];
@@ -14,35 +13,19 @@ $summaryHtml = $summaryCache['html'] ?? '';
 
 $defaultAvatarUrl = WT_DEFAULT_AVATAR_URL;
 
-$cumulativeCache = wt_get_cached_cumulative($search, $page, $perPage, $focusedPlayer, $defaultAvatarUrl);
-$page = (int)($cumulativeCache['page'] ?? $page);
-$pageStats = $cumulativeCache['pageStats'] ?? [];
-$totalRows = (int)($cumulativeCache['totalRows'] ?? 0);
-$totalPages = (int)($cumulativeCache['totalPages'] ?? max(1, ceil(max($totalRows, 1) / $perPage)));
-$prevPageUrl = $cumulativeCache['prevPageUrl'] ?? null;
-$nextPageUrl = $cumulativeCache['nextPageUrl'] ?? null;
-$cumulativeHtml = $cumulativeCache['html'] ?? '';
-
 if ($focusedPlayer === null && wt_is_logged_in()) {
     $focusedPlayer = wt_current_user_id();
 }
 
 $focused = null;
-if ($focusedPlayer !== null) {
-    foreach ($pageStats as $row) {
-        if (($row['steamid'] ?? '') === (string)$focusedPlayer) {
-            $focused = $row;
-            break;
-        }
-    }
-    if ($focused === null) {
-        $focused = wt_fetch_player($focusedPlayer);
-    }
+if ($focusedPlayer !== null && $focusedPlayer !== '') {
+    $focused = wt_fetch_player($focusedPlayer);
 }
 
 $pageTitle = 'The Youkai Pound · WhaleTracker';
 $activePage = 'cumulative';
-$tabRevision = isset($cumulativeCache['revision']) ? substr(md5((string)$cumulativeCache['revision']), 0, 6) : null;
+$cumulativeRevision = wt_cumulative_revision();
+$tabRevision = $cumulativeRevision ? substr(md5((string)$cumulativeRevision), 0, 6) : null;
 
 include __DIR__ . '/templates/layout_top.php';
 
@@ -97,9 +80,27 @@ function initSorting() {
 }
 
 let cumulativeLoading = false;
+let cumulativeAbortController = null;
+
+function cancelCumulativeRequest() {
+    if (cumulativeAbortController) {
+        try {
+            cumulativeAbortController.abort();
+        } catch (err) {
+            console.warn('[WhaleTracker] Failed to abort cumulative request', err);
+        }
+        cumulativeAbortController = null;
+    }
+    cumulativeLoading = false;
+    const container = document.getElementById('cumulative-fragment');
+    if (container) {
+        container.classList.remove('is-loading');
+    }
+}
+
 function initCumulativeFragment() {
     const container = document.getElementById('cumulative-fragment');
-    if (!container || cumulativeLoading) {
+    if (!container) {
         return;
     }
     container.addEventListener('click', event => {
@@ -113,6 +114,24 @@ function initCumulativeFragment() {
         event.preventDefault();
         loadCumulativePage(link.getAttribute('href'));
     });
+    const initialUrl = container.dataset.initialUrl || window.location.href;
+    if (initialUrl) {
+        loadCumulativePage(initialUrl);
+    }
+}
+
+function initTabNavigationCancel() {
+    const navTriggers = document.querySelectorAll('.tab-button, .steam-login');
+    if (!navTriggers.length) {
+        return;
+    }
+    navTriggers.forEach(element => {
+        element.addEventListener('click', () => {
+            if (cumulativeLoading) {
+                cancelCumulativeRequest();
+            }
+        });
+    });
 }
 
 async function loadCumulativePage(targetUrl) {
@@ -120,12 +139,16 @@ async function loadCumulativePage(targetUrl) {
     if (!container || cumulativeLoading || !targetUrl) {
         return;
     }
+    cancelCumulativeRequest();
+    cumulativeAbortController = new AbortController();
     cumulativeLoading = true;
     container.classList.add('is-loading');
     try {
         const linkUrl = new URL(targetUrl, window.location.href);
-        const fetchUrl = new URL(cumulativeFragmentEndpoint, window.location.href);
+        const endpoint = container.dataset.fragment || cumulativeFragmentEndpoint;
+        const fetchUrl = new URL(endpoint, window.location.href);
         const perPage = container.dataset.perPage || '50';
+        const focusedPlayer = container.dataset.player || '';
         linkUrl.searchParams.forEach((value, key) => {
             if (value !== null) {
                 fetchUrl.searchParams.set(key, value);
@@ -135,9 +158,13 @@ async function loadCumulativePage(targetUrl) {
             fetchUrl.searchParams.set('page', linkUrl.searchParams.get('page') || '1');
         }
         fetchUrl.searchParams.set('perPage', perPage);
+        if (focusedPlayer && !fetchUrl.searchParams.has('player')) {
+            fetchUrl.searchParams.set('player', focusedPlayer);
+        }
         const response = await fetch(fetchUrl.toString(), {
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             cache: 'no-store',
+            signal: cumulativeAbortController.signal,
         });
         if (!response.ok) {
             throw new Error('Failed to fetch cumulative fragment');
@@ -147,6 +174,12 @@ async function loadCumulativePage(targetUrl) {
             throw new Error('Invalid fragment payload');
         }
         container.innerHTML = payload.html || '';
+        if (typeof payload.page !== 'undefined') {
+            container.dataset.page = String(payload.page);
+        }
+        if (typeof payload.totalPages !== 'undefined') {
+            container.dataset.totalPages = String(payload.totalPages);
+        }
         const cumulativeTable = container.querySelector('#stats-table-cumulative');
         if (cumulativeTable) {
             attachSortingToTable(cumulativeTable);
@@ -156,9 +189,15 @@ async function loadCumulativePage(targetUrl) {
             window.history.replaceState({}, '', finalUrl);
         }
     } catch (err) {
+        if (err.name === 'AbortError') {
+            return;
+        }
         console.error('[WhaleTracker] Failed to load cumulative page', err);
         window.location.href = targetUrl;
     } finally {
+        if (cumulativeAbortController) {
+            cumulativeAbortController = null;
+        }
         cumulativeLoading = false;
         container.classList.remove('is-loading');
     }
@@ -167,6 +206,7 @@ async function loadCumulativePage(targetUrl) {
 document.addEventListener('DOMContentLoaded', () => {
     initSorting();
     initCumulativeFragment();
+    initTabNavigationCancel();
 });
 </script>
 

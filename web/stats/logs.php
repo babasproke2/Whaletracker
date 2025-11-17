@@ -7,9 +7,10 @@ header('Pragma: no-cache');
 
 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 60;
 $limit = max(1, min($limit, 100));
+$scope = wt_logs_normalize_scope($_GET['scope'] ?? 'all');
 
 try {
-    $logs = wt_fetch_logs($limit);
+    $logs = wt_fetch_logs($limit, $scope);
     echo json_encode([
         'success' => true,
         'generated_at' => time(),

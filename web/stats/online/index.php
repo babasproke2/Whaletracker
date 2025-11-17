@@ -17,22 +17,20 @@ const onlineTable = document.getElementById('stats-table-online');
 const onlineTbody = onlineTable ? onlineTable.querySelector('tbody') : null;
 const onlineEmpty = document.getElementById('online-empty');
 const onlineCountLabel = document.getElementById('nav-online-count');
+const classIconBase = <?= json_encode(rtrim(WT_CLASS_ICON_BASE, '/')) ?> + '/';
 let visibleMaxPlayers = 32;
 
-const classNameMap = {0: 'Spectator', 1: 'Scout', 2: 'Sniper', 3: 'Soldier', 4: 'Demoman', 5: 'Medic', 6: 'Heavy', 7: 'Pyro', 8: 'Spy', 9: 'Engineer'};
-const classIconBase = '/leaderboard/';
-const classIconMap = {
-    Spectator: 'Icon_replay.png',
-    Unknown: 'Icon_replay.png',
-    Scout: 'Scout.png',
-    Soldier: 'Soldier.png',
-    Pyro: 'Pyro.png',
-    Demoman: 'Demoman.png',
-    Heavy: 'Heavy.png',
-    Engineer: 'Engineer.png',
-    Medic: 'Medic.png',
-    Sniper: 'Sniper.png',
-    Spy: 'Spy.png'
+const classMetadata = {
+    0: { slug: 'spectator', label: 'Spectator', icon: 'Icon_replay.png' },
+    1: { slug: 'scout', label: 'Scout', icon: 'Scout.png' },
+    2: { slug: 'sniper', label: 'Sniper', icon: 'Sniper.png' },
+    3: { slug: 'soldier', label: 'Soldier', icon: 'Soldier.png' },
+    4: { slug: 'demoman', label: 'Demoman', icon: 'Demoman.png' },
+    5: { slug: 'medic', label: 'Medic', icon: 'Medic.png' },
+    6: { slug: 'heavy', label: 'Heavy', icon: 'Heavy.png' },
+    7: { slug: 'pyro', label: 'Pyro', icon: 'Pyro.png' },
+    8: { slug: 'spy', label: 'Spy', icon: 'Spy.png' },
+    9: { slug: 'engineer', label: 'Engineer', icon: 'Engineer.png' },
 };
 
 function formatPlaytime(seconds) {
@@ -62,11 +60,13 @@ function createNumberCell(sortValue, displayValue, title) {
 }
 
 function getClassInfo(classId) {
-    const name = classNameMap[classId] || 'Unknown';
-    const iconFile = classIconMap[name] || classIconMap.Unknown;
+    const meta = classMetadata[classId] || classMetadata[0];
+    if (!meta) {
+        return { name: 'Unknown', icon: null };
+    }
     return {
-        name,
-        icon: classIconBase + iconFile
+        name: meta.label,
+        icon: meta.icon ? classIconBase + meta.icon : null,
     };
 }
 
@@ -148,35 +148,26 @@ function renderOnline(players) {
         const dtpm = minutes > 0 ? damageTaken / minutes : damageTaken;
         const kdValue = deaths > 0 ? kills / deaths : kills;
         const score = kills + assists;
-        const accuracy = shots > 0 ? (hits / shots) * 100 : null;
-        const accuracySortValue = accuracy !== null ? accuracy : 0;
-        const accuracyDisplay = accuracy !== null ? `${formatNumber(accuracy, 1)}%` : '—';
         const classEntries = Array.isArray(player.class_accuracy_summary) ? player.class_accuracy_summary : [];
-
-        const tooltipParts = [];
-        let bestClassEntry = null;
-        classEntries.forEach(entry => {
-            if (!entry || typeof entry.accuracy !== 'number') {
-                return;
-            }
-            if (!bestClassEntry || entry.accuracy > bestClassEntry.accuracy) {
-                bestClassEntry = entry;
-            }
-        });
-        if (bestClassEntry) {
-            const classHits = Number(bestClassEntry.hits || 0);
-            const classShots = Number(bestClassEntry.shots || 0);
-            if (classShots > 0) {
-                tooltipParts.push(`${bestClassEntry.label || 'Class'}: ${formatNumber(bestClassEntry.accuracy, 1)}% (${classHits.toLocaleString()}/${classShots.toLocaleString()})`);
-            } else {
-                tooltipParts.push(`${bestClassEntry.label || 'Class'}: ${formatNumber(bestClassEntry.accuracy, 1)}%`);
-            }
-        } else if (accuracy !== null) {
-            tooltipParts.push(`${formatNumber(accuracy, 1)}% overall accuracy`);
-        } else {
-            tooltipParts.push('Accuracy unavailable');
+        const activeClass = Number(player.class) || 0;
+        const activeMeta = classMetadata[activeClass];
+        const activeAcc = player.active_class_accuracy;
+        let accuracy = null;
+        let accuracyDisplay = '—';
+        let accuracyTitle = 'Accuracy unavailable';
+        if (activeAcc && activeAcc.shots > 0) {
+            const shotsValue = Number(activeAcc.shots) || 0;
+            const hitsValue = Number(activeAcc.hits) || 0;
+            accuracy = shotsValue > 0 ? (hitsValue / shotsValue) * 100 : null;
+            accuracyDisplay = accuracy !== null ? `${formatNumber(accuracy, 1)}%` : '—';
+            const label = (activeMeta && activeMeta.label) ? activeMeta.label : 'Class';
+            accuracyTitle = `${label} (${shotsValue.toLocaleString()} shots / ${hitsValue.toLocaleString()} hits)`;
+        } else if (shots > 0) {
+            accuracy = (hits / shots) * 100;
+            accuracyDisplay = `${formatNumber(accuracy, 1)}%`;
+            accuracyTitle = `${formatNumber(accuracy, 1)}% overall accuracy (${shots.toLocaleString()} shots / ${hits.toLocaleString()} hits)`;
         }
-        const accuracyTitle = tooltipParts.join(' • ');
+        const accuracySortValue = accuracy !== null ? accuracy : 0;
 
         const classInfo = getClassInfo(Number(player.class) || 0);
         const isSpectator = listedSpectator

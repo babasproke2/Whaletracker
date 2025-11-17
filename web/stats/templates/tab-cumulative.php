@@ -126,7 +126,16 @@
 
     <?= $summaryHtml ?>
 
-    <div id="cumulative-fragment" data-current-page="<?= (int)$page ?>" data-total-pages="<?= (int)$totalPages ?>" data-per-page="<?= (int)$perPage ?>">
-        <?= $cumulativeHtml ?>
+    <div
+        id="cumulative-fragment"
+        data-per-page="<?= (int)$perPage ?>"
+        data-player="<?= htmlspecialchars((string)($focusedPlayer ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+        data-fragment="/stats/cumulative_fragment.php"
+        data-initial-url="<?= htmlspecialchars($_SERVER['REQUEST_URI'] ?? '', ENT_QUOTES, 'UTF-8') ?>"
+    >
+        <div class="table-loading-message">Loading cumulative stats…</div>
+        <noscript>
+            <p class="table-noscript-warning">Enable JavaScript to view cumulative stats.</p>
+        </noscript>
     </div>
 </div>
