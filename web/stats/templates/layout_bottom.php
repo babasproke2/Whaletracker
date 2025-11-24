@@ -9,7 +9,7 @@
         return;
     }
     const onlineEndpoint = '/stats/online.php';
-    const chatEndpoint = '/stats/chat.php?limit=1';
+    const chatEndpoint = '/stats/chat.php?limit=1&alerts_only=1';
 
     async function updateNavCount() {
         if (!navCountEl && !chatInput) {
@@ -22,8 +22,15 @@
             }
             const payload = await res.json();
             const players = Array.isArray(payload.players) ? payload.players : [];
-            const count = players.length;
-            const max = Number(payload.visible_max_players || payload.visible_max || 32) || 32;
+            const servers = Array.isArray(payload.servers) ? payload.servers : [];
+            let count = servers.reduce((sum, server) => sum + (Number(server.player_count) || 0), 0);
+            let max = servers.reduce((sum, server) => sum + (Number(server.visible_max) || 0), 0);
+            if (!count) {
+                count = Number(payload.player_count || players.length || 0);
+            }
+            if (!max) {
+                max = Number(payload.visible_max_players || payload.visible_max || 32) || 32;
+            }
             if (navCountEl) {
                 navCountEl.textContent = `${count} / ${max}`;
             }

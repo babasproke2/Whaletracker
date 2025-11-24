@@ -6,46 +6,70 @@ include __DIR__ . '/../templates/tab-logs.php';
 <script>
 const logsFragmentEndpoint = '/stats/logs_fragment_static.php';
 const LOGS_PER_PAGE = <?= (int)$perPage ?>;
-const LOGS_FRAGMENT_LIMIT = <?= (int)$fragmentLimit ?>;
 const LOG_SCOPE = <?= json_encode($logScope ?? 'regular') ?>;
 let currentPage = <?= (int)$page ?>;
 const logsContainer = document.getElementById('logs-container');
 const logsEmpty = document.getElementById('logs-empty');
 const logsRefreshButton = document.getElementById('logs-refresh');
 const paginationContainer = document.getElementById('logs-pagination');
-let logsInitialized = false;
-let totalPages = 1;
+let totalPages = logsContainer ? Number(logsContainer.dataset.totalPages || '1') : 1;
+const initialSource = logsContainer ? (logsContainer.dataset.initialSource || 'none') : 'none';
+let logsLoading = false;
+
+function setEmptyState(visible, message) {
+    if (!logsEmpty) {
+        return;
+    }
+    logsEmpty.style.display = visible ? '' : 'none';
+    if (message) {
+        logsEmpty.textContent = message;
+    }
+}
+
+function updateEmptyStateFromContent() {
+    if (!logsContainer) {
+        return;
+    }
+    const hasContent = logsContainer.textContent.trim().length > 0;
+    setEmptyState(!hasContent, hasContent ? '' : 'No logs available.');
+}
 
 function buildPagination() {
-    if (!paginationContainer) return;
+    if (!paginationContainer) {
+        return;
+    }
     paginationContainer.innerHTML = '';
     if (totalPages <= 1) {
         return;
     }
     for (let page = 1; page <= totalPages; page++) {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = page;
         btn.className = 'logs-page-button' + (page === currentPage ? ' active' : '');
         btn.addEventListener('click', () => {
-            if (page !== currentPage) {
-                currentPage = page;
-                fetchLogs();
+            if (page !== currentPage && !logsLoading) {
+                fetchLogs(page);
             }
         });
         paginationContainer.appendChild(btn);
     }
 }
 
-async function fetchLogs() {
+async function fetchLogs(targetPage = currentPage) {
     if (!logsContainer) {
         return;
     }
+    logsLoading = true;
+    setEmptyState(true, 'Loading logs...');
     try {
-        if (logsEmpty) {
-            logsEmpty.textContent = 'Loading logs...';
-            logsEmpty.style.display = '';
-        }
-        const requestUrl = `${logsFragmentEndpoint}?limit=${encodeURIComponent(LOGS_FRAGMENT_LIMIT)}&per_page=${encodeURIComponent(LOGS_PER_PAGE)}&page=${encodeURIComponent(currentPage)}&scope=${encodeURIComponent(LOG_SCOPE)}&t=${Date.now()}`;
+        const params = new URLSearchParams({
+            page: String(targetPage),
+            per_page: String(LOGS_PER_PAGE),
+            scope: LOG_SCOPE,
+            t: String(Date.now())
+        });
+        const requestUrl = `${logsFragmentEndpoint}?${params.toString()}`;
         const response = await fetch(requestUrl, { cache: 'no-store' });
         if (!response.ok) {
             throw new Error('Failed request');
@@ -54,27 +78,37 @@ async function fetchLogs() {
         if (!payload || payload.ok !== true) {
             throw new Error('Invalid fragment payload');
         }
-        totalPages = payload.total_pages || 1;
         logsContainer.innerHTML = payload.html || '';
+        currentPage = Number(payload.page) || targetPage;
+        totalPages = Number(payload.total_pages) || 1;
+        if (logsContainer.dataset) {
+            logsContainer.dataset.currentPage = String(currentPage);
+            logsContainer.dataset.totalPages = String(totalPages);
+            logsContainer.dataset.totalLogs = String(payload.total_logs || 0);
+            logsContainer.dataset.initialSource = payload.from_cache ? 'cache' : 'live';
+        }
+        updateEmptyStateFromContent();
         buildPagination();
     } catch (err) {
         console.error('[WhaleTracker] Failed to fetch logs:', err);
-        if (logsEmpty) {
-            logsEmpty.textContent = 'Failed to load logs.';
-            logsEmpty.style.display = '';
-        }
+        setEmptyState(true, 'Failed to load logs.');
+    } finally {
+        logsLoading = false;
     }
 }
 
 function initLogsPage() {
-    if (logsInitialized) {
+    if (!logsContainer) {
         return;
     }
-    logsInitialized = true;
-    if (logsRefreshButton) {
-        logsRefreshButton.addEventListener('click', () => fetchLogs());
+    buildPagination();
+    updateEmptyStateFromContent();
+    if (initialSource === 'none') {
+        fetchLogs(currentPage);
     }
-    fetchLogs();
+    if (logsRefreshButton) {
+        logsRefreshButton.addEventListener('click', () => fetchLogs(currentPage));
+    }
 }
 
 document.addEventListener('DOMContentLoaded', initLogsPage);

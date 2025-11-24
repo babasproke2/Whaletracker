@@ -28,8 +28,11 @@ define('WT_LOGS_FRAGMENT_VERSION', '20251115');
 define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: 'vXo8#Q3Lk9m@Zt1DbR2n');
 
 // Logs caching + pagination controls
-define('WT_LOGS_TOTAL_LIMIT', (int)(getenv('WT_LOGS_TOTAL_LIMIT') ?: 60));
-define('WT_LOGS_PAGE_SIZE', (int)(getenv('WT_LOGS_PAGE_SIZE') ?: 15));
+define('WT_LOGS_TOTAL_LIMIT', (int)(getenv('WT_LOGS_TOTAL_LIMIT') ?: 50));
+define('WT_LOGS_PAGE_SIZE', (int)(getenv('WT_LOGS_PAGE_SIZE') ?: 25));
+define('WT_LOGS_MAX_PAGES', (int)(getenv('WT_LOGS_MAX_PAGES') ?: 2));
+define('WT_LOGS_HISTORY_LIMIT', (int)(getenv('WT_LOGS_HISTORY_LIMIT') ?: 50));
+define('WT_STATS_MIN_PLAYTIME_SORT', (int)(getenv('WT_STATS_MIN_PLAYTIME_SORT') ?: (4 * 3600)));
 
 // Base URL for TF2 class icons used across the UI
 define('WT_CLASS_ICON_BASE', getenv('WT_CLASS_ICON_BASE') ?: '/leaderboard/');

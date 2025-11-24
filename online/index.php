@@ -11,13 +11,14 @@ include __DIR__ . '/../templates/tab-online.php';
 
 <script>
 const onlineEndpoint = '/stats/online.php';
-const onlineRefreshMs = 4000;
+const onlineRefreshMs = 10000;
 const defaultAvatar = '<?= WT_DEFAULT_AVATAR_URL ?>';
 const onlineTable = document.getElementById('stats-table-online');
 const onlineTbody = onlineTable ? onlineTable.querySelector('tbody') : null;
 const onlineEmpty = document.getElementById('online-empty');
 const onlineCountLabel = document.getElementById('nav-online-count');
 const classIconBase = <?= json_encode(rtrim(WT_CLASS_ICON_BASE, '/')) ?> + '/';
+const mapCardsContainer = document.getElementById('online-map-cards');
 let visibleMaxPlayers = 32;
 
 const classMetadata = {
@@ -96,6 +97,94 @@ function updateOnlineButtonInfo(count, max) {
     }
 }
 
+function renderServerCards(servers) {
+    if (!mapCardsContainer) {
+        return;
+    }
+    mapCardsContainer.innerHTML = '';
+    const list = Array.isArray(servers) ? servers.slice() : [];
+    if (list.length === 0) {
+        const fallback = document.createElement('div');
+        fallback.className = 'info-card';
+        const infoSide = document.createElement('div');
+        infoSide.className = 'info-card-left';
+        const label = document.createElement('div');
+        label.className = 'label';
+        label.textContent = 'Map:';
+        const value = document.createElement('div');
+        value.className = 'value';
+        value.textContent = 'Unknown';
+        const players = document.createElement('div');
+        players.className = 'subvalue';
+        players.textContent = 'Players: 0 / 0';
+        infoSide.append(label, value, players);
+        fallback.appendChild(infoSide);
+        mapCardsContainer.appendChild(fallback);
+        return;
+    }
+    list.sort((a, b) => (Number(a.host_port) || 0) - (Number(b.host_port) || 0));
+    list.forEach(server => {
+        const card = document.createElement('div');
+        card.className = 'info-card';
+        const infoSide = document.createElement('div');
+        infoSide.className = 'info-card-left';
+        const imageSide = document.createElement('div');
+        imageSide.className = 'info-card-right';
+        const label = document.createElement('div');
+        label.className = 'label';
+        const ip = server.host_ip || '0.0.0.0';
+        const port = Number(server.host_port) || 0;
+        const city = (server.city && server.city.trim()) ? server.city : 'Unknown';
+        const countryCode = (server.country_code && server.country_code.trim()) ? server.country_code.trim().toLowerCase() : '';
+        const connectLink = document.createElement('a');
+        connectLink.classList.add('connect-url');
+        connectLink.href = `steam://connect/${ip}:${port}`;
+        connectLink.textContent = `${ip}:${port}`;
+        connectLink.title = 'Connect via Steam';
+        label.textContent = '(';
+        label.appendChild(connectLink);
+        label.appendChild(document.createTextNode(`): ${city}`));
+        if (countryCode) {
+            label.appendChild(document.createTextNode(' '));
+            const flag = document.createElement('img');
+            flag.className = 'server-flag';
+            flag.alt = countryCode.toUpperCase();
+            flag.src = `https://bantculture.com/static/flags/bantflags/${countryCode}.png`;
+            flag.title = `Region: ${countryCode}`;
+            label.appendChild(flag);
+        }
+        const extraFlags = Array.isArray(server.extra_flags) ? server.extra_flags.slice() : [];
+        extraFlags.forEach(flagName => {
+            const normalized = (flagName || '').trim().toLowerCase();
+            if (!normalized) {
+                return;
+            }
+            const extra = document.createElement('img');
+            extra.className = 'server-flag';
+            extra.alt = normalized.toUpperCase();
+            extra.src = `https://bantculture.com/static/flags/bantflags/${normalized}.png`;
+            extra.title = `${flagName}`;
+            label.appendChild(document.createTextNode(' '));
+            label.appendChild(extra);
+        });
+        const value = document.createElement('div');
+        value.className = 'value';
+        value.textContent = server.map_name || 'Unknown';
+        const players = document.createElement('div');
+        players.className = 'subvalue';
+        const max = Number(server.visible_max) || visibleMaxPlayers;
+        players.textContent = `Players: ${server.player_count || 0} / ${max}`;
+        infoSide.append(label, value, players);
+        const img = document.createElement('img');
+        img.className = 'info-card-image';
+        img.alt = server.map_name ? `${server.map_name} preview` : 'Map preview';
+        img.src = server.map_image || '';
+        imageSide.appendChild(img);
+        card.append(infoSide, imageSide);
+        mapCardsContainer.appendChild(card);
+    });
+}
+
 function renderOnline(players) {
     if (!onlineTable || !onlineTbody || !onlineEmpty) {
         return;
@@ -110,7 +199,7 @@ function renderOnline(players) {
         return (Number(b.kills) || 0) - (Number(a.kills) || 0);
     });
     if (list.length === 0) {
-        onlineTable.style.display = 'none';
+        onlineTable.style.display = '';
         onlineEmpty.style.display = '';
         onlineTbody.innerHTML = '';
         return;
@@ -148,10 +237,10 @@ function renderOnline(players) {
         const dtpm = minutes > 0 ? damageTaken / minutes : damageTaken;
         const kdValue = deaths > 0 ? kills / deaths : kills;
         const score = kills + assists;
-        const classEntries = Array.isArray(player.class_accuracy_summary) ? player.class_accuracy_summary : [];
+        const weaponEntries = Array.isArray(player.weapon_category_summary) ? player.weapon_category_summary : [];
         const activeClass = Number(player.class) || 0;
         const activeMeta = classMetadata[activeClass];
-        const activeAcc = player.active_class_accuracy;
+        const activeAcc = player.active_weapon_accuracy;
         let accuracy = null;
         let accuracyDisplay = '—';
         let accuracyTitle = 'Accuracy unavailable';
@@ -160,7 +249,7 @@ function renderOnline(players) {
             const hitsValue = Number(activeAcc.hits) || 0;
             accuracy = shotsValue > 0 ? (hitsValue / shotsValue) * 100 : null;
             accuracyDisplay = accuracy !== null ? `${formatNumber(accuracy, 1)}%` : '—';
-            const label = (activeMeta && activeMeta.label) ? activeMeta.label : 'Class';
+            const label = activeAcc.label || 'Weapon';
             accuracyTitle = `${label} (${shotsValue.toLocaleString()} shots / ${hitsValue.toLocaleString()} hits)`;
         } else if (shots > 0) {
             accuracy = (hits / shots) * 100;
@@ -266,12 +355,20 @@ async function fetchOnline() {
             throw new Error('Invalid payload');
         }
         const players = Array.isArray(payload.players) ? payload.players.slice() : [];
+        const servers = Array.isArray(payload.servers) ? payload.servers.slice() : [];
         visibleMaxPlayers = Number(payload.visible_max_players) || 32;
+        const totalPlayers = servers.reduce((sum, server) => sum + (Number(server.player_count) || 0), 0);
+        const totalMax = servers.reduce((sum, server) => sum + (Number(server.visible_max) || 0), 0);
         renderOnline(players);
-        updateOnlineButtonInfo(players.length, visibleMaxPlayers);
+        renderServerCards(servers);
+        const countForNav = totalPlayers || Number(payload.player_count || players.length || 0);
+        const maxForNav = totalMax || visibleMaxPlayers;
+        updateOnlineButtonInfo(countForNav, maxForNav);
     } catch (err) {
         console.error('[WhaleTracker] Failed to fetch online stats:', err);
         updateOnlineButtonInfo(0, visibleMaxPlayers);
+        renderServerCards([]);
+        updateMapImage(null, null);
     }
 }
 

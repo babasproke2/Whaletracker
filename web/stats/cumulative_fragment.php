@@ -3,6 +3,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
 
 header('Content-Type: application/json');
+header('Cache-Control: public, max-age=60');
 
 function wt_cumulative_fragment_json(array $payload, int $code = 200): void
 {

@@ -1,0 +1,48 @@
+<div class="table-toolbar">
+    <form class="search-bar toolbar-search" method="get" action="/stats/index.php">
+        <input type="text" name="q" value="i&#039;m" placeholder="Search players by Steam name or SteamID">
+        <button type="submit">Search</button>
+    </form>
+    <div class="toolbar-spacer"></div>
+    <div class="toolbar-pagination">
+                    <span class="table-pagination-info">Page 1 / 1</span>
+            <div class="table-pagination-controls">
+                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                            </div>
+            </div>
+</div>
+
+<div class="table-wrapper">
+    <table class="stats-table" id="stats-table-cumulative">
+        <thead>
+        <tr>
+            <th data-key="player" data-type="text" title="Player">Player</th>
+            <th data-key="kills" data-type="number" title="Kills | Deaths | Assists">Kills|Deaths|Assists</th>
+            <th data-key="kd" data-type="number" title="Kill/Death Ratio">K/D</th>
+            <th data-key="damage" data-type="number" title="Damage Dealt">Dmg</th>
+            <th data-key="damage_taken" data-type="number" title="Damage Taken">DT</th>
+            <th data-key="dpm" data-type="number" title="Damage Per Minute">D/M</th>
+            <th data-key="dtpm" data-type="number" title="Damage Taken Per Minute">DT/M</th>
+            <th data-key="accuracy" data-type="number" title="Accuracy">Acc.</th>
+            <th data-key="airshots" data-type="number" title="Airshots">AS</th>
+            <th data-key="drops" data-type="number" title="Dropped Medics | Times Dropped">Dp | Dp'd</th>
+            <th data-key="healing" data-type="number" title="Healing Done">Heals</th>
+            <th data-key="headshots" data-type="number" title="Headshots">Headshots</th>
+            <th data-key="backstabs" data-type="number" title="Backstabs">Stabs</th>
+            <th data-key="streak" data-type="number" title="Best Killstreak">Best Streak</th>
+            <th data-key="playtime" data-type="number" title="Playtime">Time</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr data-player="i&#039;m tired" data-kills="730" data-assists="275" data-deaths="1031" data-damage="165961" data-damage_taken="228226" data-dpm="181.6097" data-dtpm="249.7458" data-accuracy="12.9265" data-accuracy_class="0" data-airshots="437" data-drops="1" data-dropped="1" data-kd="0.7081" data-healing="1437" data-headshots="0" data-backstabs="0" data-streak="7" data-playtime="54830" data-score="1005" data-online="0"><td class="player-cell"><img class="player-avatar" src="/stats/cache/76561198082467289-avatar.jpg" alt="" onerror="this.onerror=null;this.src='/stats/assets/whaley-avatar.jpg'"><div><a title="Player" href="https://steamcommunity.com/id/thebiggestnut/" target="_blank" rel="noopener">I&#039;m tired</a></div></td><td>730|1,031|275</td><td>0.71</td><td>165,961</td><td>228,226</td><td>181.6</td><td>249.7</td><td class="stat-accuracy-cell" title="Overall: 12.9% (2512/19433)"><span class="stat-accuracy-value">12.9%</span></td><td>437</td><td>1 | 1</td><td>1,437</td><td>0</td><td>0</td><td>7</td><td>15h 13m</td></tr>        </tbody>
+    </table>
+</div>
+
+    <div class="table-pagination table-pagination--bottom">
+        <span class="table-pagination-info">Page 1 / 1</span>
+        <div class="table-pagination-controls">
+                            <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                        <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                    </div>
+    </div>

@@ -18,10 +18,38 @@ const chatInput = document.getElementById('chat-input');
 const navCountEl = document.getElementById('nav-online-count');
 const chatStatus = document.getElementById('chat-status');
 const chatPanel = document.getElementById('chat-panel');
+const chatTitleBaseRaw = document.title.replace(/^\(\d+\)\s*/, '').trim();
+const chatTitleBase = chatTitleBaseRaw.length ? chatTitleBaseRaw : 'Live Chat · WhaleTracker';
+let chatTitleCount = 0;
 let chatPolling = false;
 let chatTimer = null;
-let chatRevision = null;
 let chatAutoScrollEnabled = true;
+let chatMessages = [];
+const chatMessageIds = new Set();
+let chatOldestId = null;
+let chatNewestId = null;
+let chatHasMoreOlder = true;
+let chatLoadingOlder = false;
+let chatRefreshInFlight = false;
+let chatRefreshPendingForceScroll = false;
+
+function updateChatTitleCount() {
+    document.title = `(${chatTitleCount}) ${chatTitleBase}`;
+}
+
+function resetChatTitleCount() {
+    chatTitleCount = 0;
+    updateChatTitleCount();
+}
+
+function incrementChatTitleCount(delta = 1) {
+    if (delta <= 0) {
+        return;
+    }
+    chatTitleCount += delta;
+    updateChatTitleCount();
+}
+resetChatTitleCount();
 
 const COLOR_MAP = {
     default: null,
@@ -44,7 +72,27 @@ function setChatStatus(text, isError = false) {
     chatStatus.classList.toggle('chat-status-error', Boolean(isError));
 }
 
+async function fetchChatData(params = {}) {
+    const url = new URL(chatEndpoint, window.location.origin);
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+            url.searchParams.set(key, value);
+        }
+    });
+    url.searchParams.set('t', Date.now());
+    const response = await fetch(url.toString(), { cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload || payload.ok !== true) {
+        throw new Error(payload && payload.error ? payload.error : 'Chat backend error');
+    }
+    return payload;
+}
+
 let topArrow = null;
+let lockArrow = null;
 let bottomArrow = null;
 if (chatPanel) {
     topArrow = document.createElement('div');
@@ -52,7 +100,23 @@ if (chatPanel) {
     topArrow.innerHTML = '<img src="/stats/reisen_up.png" alt="Scroll to top">';
     topArrow.addEventListener('click', () => {
         const box = document.getElementById('chat-messages');
-        if (box) box.scrollTop = 0;
+        if (box) {
+            box.scrollTop = 0;
+            loadOlderMessages();
+        }
+    });
+
+    lockArrow = document.createElement('div');
+    lockArrow.classList.add('navarrow', 'navarrow-lock');
+    lockArrow.title = 'Lock chat to bottom';
+    lockArrow.innerHTML = '<img src="/stats/keine_lock.png" alt="Lock chat to bottom">';
+    lockArrow.classList.toggle('is-active', chatAutoScrollEnabled);
+    lockArrow.addEventListener('click', () => {
+        chatAutoScrollEnabled = !chatAutoScrollEnabled;
+        lockArrow.classList.toggle('is-active', chatAutoScrollEnabled);
+        if (chatAutoScrollEnabled && chatMessagesBox) {
+            chatMessagesBox.scrollTop = chatMessagesBox.scrollHeight;
+        }
     });
 
     bottomArrow = document.createElement('div');
@@ -63,6 +127,7 @@ if (chatPanel) {
         if (box) box.scrollTop = box.scrollHeight;
     });
     chatPanel.appendChild(topArrow);
+    chatPanel.appendChild(lockArrow);
     chatPanel.appendChild(bottomArrow);
 }
 
@@ -143,15 +208,17 @@ function buildChatRow(entry) {
     return row;
 }
 
-function renderChat(messages) {
+function renderChat(messages, options = {}) {
     if (!chatMessagesBox) {
         return;
     }
+    const skipAutoScroll = options.skipAutoScroll === true;
+    const forceScroll = options.forceScrollToBottom === true;
     chatMessagesBox.innerHTML = '';
     messages.forEach(msg => {
         chatMessagesBox.appendChild(buildChatRow(msg));
     });
-    if (chatAutoScrollEnabled) {
+    if ((chatAutoScrollEnabled && !skipAutoScroll) || forceScroll) {
         chatMessagesBox.scrollTop = chatMessagesBox.scrollHeight;
     }
 }
@@ -164,28 +231,125 @@ function updateChatPlaceholder(count, max) {
     chatInput.placeholder = template.replace('{count}', String(count));
 }
 
-async function refreshChat() {
+async function loadInitialChat() {
     try {
-        const response = await fetch(`${chatEndpoint}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+        const payload = await fetchChatData({ limit: 50 });
+        chatMessages = Array.isArray(payload.messages) ? payload.messages : [];
+        chatMessageIds.clear();
+        registerMessageIds(chatMessages);
+        chatOldestId = payload.oldest_id ?? (chatMessages.length ? chatMessages[0].id : null);
+        chatNewestId = payload.newest_id ?? (chatMessages.length ? chatMessages[chatMessages.length - 1].id : null);
+        chatHasMoreOlder = payload.has_more_older !== false;
+        renderChat(chatMessages, { forceScrollToBottom: true });
+        setChatStatus('');
+        resetChatTitleCount();
+    } catch (err) {
+        console.error('[WhaleTracker] Initial chat load failed:', err);
+        setChatStatus('Chat sync failed', true);
+    }
+}
+
+async function loadOlderMessages() {
+    if (chatLoadingOlder || !chatHasMoreOlder || chatOldestId === null) {
+        return;
+    }
+    if (!chatMessagesBox) {
+        return;
+    }
+    chatLoadingOlder = true;
+    const prevScrollHeight = chatMessagesBox.scrollHeight;
+    const prevScrollTop = chatMessagesBox.scrollTop;
+    try {
+        const payload = await fetchChatData({ before: chatOldestId, limit: 50 });
+        const older = Array.isArray(payload.messages) ? payload.messages : [];
+        if (older.length > 0) {
+            const toPrepend = [];
+            older.forEach(msg => {
+                const id = normalizeMessageId(msg);
+                if (id === null || chatMessageIds.has(id)) {
+                    return;
+                }
+                chatMessageIds.add(id);
+                toPrepend.push(msg);
+            });
+            if (toPrepend.length > 0) {
+                chatMessages = toPrepend.concat(chatMessages);
+                chatOldestId = payload.oldest_id ?? chatOldestId;
+                chatHasMoreOlder = payload.has_more_older !== false;
+                renderChat(chatMessages, { skipAutoScroll: true });
+                const newHeight = chatMessagesBox.scrollHeight;
+                chatMessagesBox.scrollTop = newHeight - (prevScrollHeight - prevScrollTop);
+            } else if (payload.has_more_older === false) {
+                chatHasMoreOlder = false;
+            }
+        } else {
+            chatHasMoreOlder = false;
         }
-        const payload = await response.json();
-        if (!payload || payload.ok === false) {
-            throw new Error(payload && payload.error ? payload.error : 'Chat backend error');
+        setChatStatus('');
+    } catch (err) {
+        console.error('[WhaleTracker] Failed to load older chat:', err);
+        setChatStatus('Chat sync failed', true);
+    } finally {
+        chatLoadingOlder = false;
+    }
+}
+
+async function refreshChat(options = {}) {
+    const forceScroll = options.forceScrollToBottom === true;
+    if (chatRefreshInFlight) {
+        if (forceScroll) {
+            chatRefreshPendingForceScroll = true;
         }
-        const revision = payload.revision ? String(payload.revision) : null;
-        if (revision && chatRevision === revision) {
-            return;
+        return;
+    }
+    chatRefreshInFlight = true;
+    if (chatNewestId === null) {
+        await loadInitialChat();
+        chatRefreshInFlight = false;
+        return;
+    }
+    try {
+        const payload = await fetchChatData({ after: chatNewestId, limit: 50 });
+        const newMessages = Array.isArray(payload.messages) ? payload.messages : [];
+        if (payload.newest_id !== undefined && payload.newest_id !== null) {
+            chatNewestId = payload.newest_id;
         }
-        renderChat(Array.isArray(payload.messages) ? payload.messages : []);
-        if (revision) {
-            chatRevision = revision;
+        if (newMessages.length > 0) {
+            const toAppend = [];
+            let alertCount = 0;
+            newMessages.forEach(msg => {
+                const id = normalizeMessageId(msg);
+                if (id === null || chatMessageIds.has(id)) {
+                    return;
+                }
+                chatMessageIds.add(id);
+                toAppend.push(msg);
+                if (msg && msg.alert !== 0 && msg.alert !== false) {
+                    alertCount++;
+                }
+            });
+            if (toAppend.length > 0) {
+                chatMessages = chatMessages.concat(toAppend);
+                if (alertCount > 0) {
+                    incrementChatTitleCount(alertCount);
+                }
+            }
+            renderChat(chatMessages, {
+                forceScrollToBottom: options.forceScrollToBottom === true
+            });
+        } else if (options.forceScrollToBottom === true) {
+            renderChat(chatMessages, { forceScrollToBottom: true });
         }
         setChatStatus('');
     } catch (err) {
         console.error('[WhaleTracker] Chat refresh failed:', err);
         setChatStatus('Chat sync failed', true);
+    } finally {
+        chatRefreshInFlight = false;
+        if (chatRefreshPendingForceScroll) {
+            chatRefreshPendingForceScroll = false;
+            refreshChat({ forceScrollToBottom: true });
+        }
     }
 }
 
@@ -194,7 +358,7 @@ function startChat() {
         return;
     }
     chatPolling = true;
-    refreshChat();
+    loadInitialChat();
     chatTimer = setInterval(refreshChat, 4000);
 }
 
@@ -206,13 +370,43 @@ async function submitChatMessage(message) {
             body: JSON.stringify({ message }),
         });
         const payload = await response.json();
-        if (!response.ok || !payload || payload.ok === false) {
-            throw new Error(payload && payload.error ? payload.error : 'Send failed');
+        if (!response.ok || !payload) {
+            throw new Error('Send failed');
+        }
+        if (payload.message === 'persona-updated') {
+            if (chatInput) {
+                chatInput.value = '';
+            }
+            setChatStatus('Persona updated', false);
+            return;
+        }
+        if (payload.message === 'persona-not-found') {
+            if (chatInput) {
+                chatInput.value = '';
+            }
+            let msg = 'Persona not found';
+            if (Array.isArray(payload.options) && payload.options.length) {
+                const names = payload.options
+                    .map(opt => opt && opt.name ? opt.name : '')
+                    .filter(Boolean)
+                    .join(', ');
+                if (names) {
+                    msg += ` — available: ${names}`;
+                }
+            }
+            setChatStatus(msg, true);
+            return;
+        }
+        if (payload.ok !== true) {
+            throw new Error(payload.error || 'Send failed');
         }
         if (chatInput) {
             chatInput.value = '';
         }
-        refreshChat();
+        await refreshChat({ forceScrollToBottom: true });
+        if (chatMessagesBox) {
+            chatMessagesBox.scrollTop = chatMessagesBox.scrollHeight;
+        }
         setChatStatus('');
     } catch (err) {
         console.error('[WhaleTracker] Chat send failed:', err);
@@ -231,6 +425,13 @@ function bindChatForm() {
             return;
         }
         submitChatMessage(message);
+    });
+
+    chatInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && chatInput.value.trim().length > 1 && chatInput.value.trim()[0] === '/') {
+            event.preventDefault();
+            submitChatMessage(chatInput.value.trim());
+        }
     });
 }
 
@@ -251,9 +452,44 @@ function bindAutoScrollGuards() {
     }
 }
 
+function bindScrollLoadMore() {
+    if (!chatMessagesBox) {
+        return;
+    }
+    chatMessagesBox.addEventListener('scroll', () => {
+        if (chatMessagesBox.scrollTop <= 0) {
+            loadOlderMessages();
+        }
+    });
+}
+
+function normalizeMessageId(entry) {
+    if (!entry || entry.id === undefined || entry.id === null) {
+        return null;
+    }
+    const idNum = Number(entry.id);
+    if (Number.isFinite(idNum)) {
+        return idNum;
+    }
+    if (typeof entry.id === 'string' && entry.id.length > 0) {
+        return entry.id;
+    }
+    return null;
+}
+
+function registerMessageIds(messages) {
+    messages.forEach(msg => {
+        const id = normalizeMessageId(msg);
+        if (id !== null) {
+            chatMessageIds.add(id);
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     bindChatForm();
     bindAutoScrollGuards();
+    bindScrollLoadMore();
     startChat();
 });
 </script>

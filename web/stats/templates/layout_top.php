@@ -3,6 +3,13 @@ $pageTitle = $pageTitle ?? 'The Youkai Pound · WhaleTracker';
 $activePage = $activePage ?? 'cumulative';
 $navOnlineCount = $navOnlineCount ?? '0 / 32';
 $tabRevision = $tabRevision ?? null;
+$tabRoutes = [
+    ['key' => 'cumulative', 'desktop' => 'All Time Stats', 'mobile' => 'Stats', 'href' => '/stats/'],
+    ['key' => 'online', 'desktop' => 'Online Now', 'mobile' => 'Online', 'href' => '/stats/online/'],
+    ['key' => 'logs', 'desktop' => 'Match Logs', 'mobile' => 'Logs', 'href' => '/stats/logs/'],
+    ['key' => 'chat', 'desktop' => 'Chat', 'mobile' => 'Chat', 'href' => '/stats/chat/'],
+    ['key' => 'mapsdb', 'desktop' => 'MapsDB', 'mobile' => 'Maps', 'href' => '/mapsdb'],
+];
 ?>
 <!doctype html>
 <html lang="en">
@@ -52,24 +59,17 @@ $tabRevision = $tabRevision ?? null;
 
     <div class="tabs">
         <div class="tab-controls">
-            <a class="tab-button <?= $activePage === 'cumulative' ? 'active' : '' ?>" href="/stats/">
-                <span class="tab-button-label tab-button-label--desktop">All Time Stats</span>
-                <span class="tab-button-label tab-button-label--mobile">Stats</span>
-            </a>
-            <a class="tab-button <?= $activePage === 'online' ? 'active' : '' ?>" href="/stats/online/">
-                <span class="tab-button-label tab-button-label--desktop">Online Now</span>
-                <span class="tab-button-label tab-button-label--mobile">Online</span>
-                <span class="tab-button-count" id="nav-online-count" aria-live="polite"><?= htmlspecialchars($navOnlineCount, ENT_QUOTES, 'UTF-8') ?></span>
-            </a>
-            <a class="tab-button <?= $activePage === 'logs' ? 'active' : '' ?>" href="/stats/logs/">
-                <span class="tab-button-label tab-button-label--desktop">Match Logs</span>
-                <span class="tab-button-label tab-button-label--mobile">Logs</span>
-            </a>
-            <a class="tab-button <?= $activePage === 'chat' ? 'active' : '' ?>" href="/stats/chat/">
-                <span class="tab-button-label tab-button-label--desktop">Chat</span>
-                <span class="tab-button-label tab-button-label--mobile">Chat</span>
-                <span class="tab-button-count" id="nav-chat-label" aria-live="polite">Last msg. --</span>
-            </a>
+            <?php foreach ($tabRoutes as $route): ?>
+                <a class="tab-button <?= $activePage === $route['key'] ? 'active' : '' ?>" href="<?= htmlspecialchars($route['href'], ENT_QUOTES, 'UTF-8') ?>">
+                    <span class="tab-button-label tab-button-label--desktop"><?= htmlspecialchars($route['desktop'], ENT_QUOTES, 'UTF-8') ?></span>
+                    <span class="tab-button-label tab-button-label--mobile"><?= htmlspecialchars($route['mobile'], ENT_QUOTES, 'UTF-8') ?></span>
+                    <?php if ($route['key'] === 'online'): ?>
+                        <span class="tab-button-count" id="nav-online-count" aria-live="polite"><?= htmlspecialchars($navOnlineCount, ENT_QUOTES, 'UTF-8') ?></span>
+                    <?php elseif ($route['key'] === 'chat'): ?>
+                        <span class="tab-button-count" id="nav-chat-label" aria-live="polite">Last msg. --</span>
+                    <?php endif; ?>
+                </a>
+            <?php endforeach; ?>
             <?php if (!empty($tabRevision)): ?>
                 <span class="tab-hash" title="Build Hash">#<?= htmlspecialchars($tabRevision, ENT_QUOTES, 'UTF-8') ?></span>
             <?php endif; ?>

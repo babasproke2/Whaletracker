@@ -14,7 +14,19 @@ const WT_CLASS_METADATA = [
     9 => ['slug' => 'engineer', 'label' => 'Engineer', 'icon' => 'Engineer.png'],
 ];
 
+const WT_WEAPON_CATEGORY_METADATA = [
+    'shotguns' => ['label' => 'Shotgun'],
+    'scatterguns' => ['label' => 'Scattergun'],
+    'pistols' => ['label' => 'Pistol'],
+    'rocketlaunchers' => ['label' => 'Rocket Launcher'],
+    'grenadelaunchers' => ['label' => 'Grenade Launcher'],
+    'stickylaunchers' => ['label' => 'Sticky Launcher'],
+    'snipers' => ['label' => 'Sniper Rifle'],
+    'revolvers' => ['label' => 'Revolver'],
+];
+
 const WT_MAX_WEAPON_SLOTS = 3;
+const WT_ADMINS_TABLE = 'admins';
 
 function wt_class_meta_by_slug(?string $slug): ?array
 {
@@ -41,6 +53,70 @@ function wt_class_icon_url(?string $slug): ?string
     }
     $base = defined('WT_CLASS_ICON_BASE') ? WT_CLASS_ICON_BASE : '/leaderboard/';
     return rtrim($base, '/') . '/' . ltrim($icon, '/');
+}
+
+function wt_weapon_category_metadata(): array
+{
+    return WT_WEAPON_CATEGORY_METADATA;
+}
+
+function wt_build_weapon_category_summary_from_row(array &$row, bool $fallbackOverall = true): array
+{
+    $summary = [];
+    foreach (wt_weapon_category_metadata() as $slug => $meta) {
+        $shotsKey = "shots_{$slug}";
+        $hitsKey = "hits_{$slug}";
+        $shots = (int)($row[$shotsKey] ?? 0);
+        $hits = (int)($row[$hitsKey] ?? 0);
+        unset($row[$shotsKey], $row[$hitsKey]);
+        if ($shots <= 0) {
+            continue;
+        }
+        $accuracy = $shots > 0 ? ($hits / max($shots, 1)) * 100.0 : null;
+        $summary[] = [
+            'slug' => $slug,
+            'label' => $meta['label'] ?? ucfirst($slug),
+            'shots' => $shots,
+            'hits' => $hits,
+            'accuracy' => $accuracy,
+        ];
+    }
+
+    usort($summary, static function (array $a, array $b): int {
+        $shotsA = (int)($a['shots'] ?? 0);
+        $shotsB = (int)($b['shots'] ?? 0);
+        if ($shotsA === $shotsB) {
+            $accA = isset($a['accuracy']) ? (float)$a['accuracy'] : 0.0;
+            $accB = isset($b['accuracy']) ? (float)$b['accuracy'] : 0.0;
+            return $accB <=> $accA;
+        }
+        return $shotsB <=> $shotsA;
+    });
+
+    if (empty($summary) && $fallbackOverall) {
+        $totalShots = (int)($row['shots'] ?? 0);
+        $totalHits = (int)($row['hits'] ?? 0);
+        if ($totalShots > 0) {
+            $summary[] = [
+                'slug' => 'overall',
+                'label' => 'Overall',
+                'shots' => $totalShots,
+                'hits' => $totalHits,
+                'accuracy' => ($totalHits / max($totalShots, 1)) * 100.0,
+            ];
+        }
+    }
+
+    return $summary;
+}
+
+function wt_assign_weapon_category_summary(array &$row, string $summaryKey = 'weapon_category_summary', ?string $primaryKey = null): void
+{
+    $summary = wt_build_weapon_category_summary_from_row($row);
+    $row[$summaryKey] = $summary;
+    if ($primaryKey !== null) {
+        $row[$primaryKey] = $summary[0] ?? null;
+    }
 }
 
 function wt_avatar_for_hash(?string $hash): string
@@ -93,14 +169,36 @@ function wt_logs_scope_bounds(string $scope): array
     $scope = wt_logs_normalize_scope($scope);
     $threshold = wt_logs_small_threshold();
     switch ($scope) {
-        case 'short':
-            return ['min' => 1, 'max' => max(1, $threshold - 1)];
         case 'regular':
             return ['min' => $threshold, 'max' => null];
         case 'all':
         default:
             return ['min' => 1, 'max' => null];
     }
+}
+
+function wt_stats_min_playtime_sort(): int
+{
+    static $threshold = null;
+    if ($threshold !== null) {
+        return $threshold;
+    }
+    $threshold = defined('WT_STATS_MIN_PLAYTIME_SORT') ? (int)WT_STATS_MIN_PLAYTIME_SORT : (4 * 3600);
+    if ($threshold < 0) {
+        $threshold = 0;
+    }
+    return $threshold;
+}
+
+function wt_stats_order_clause(): string
+{
+    $threshold = wt_stats_min_playtime_sort();
+    $ratioExpr = 'COALESCE((kills + assists) / NULLIF(deaths, 0), (kills + assists))';
+    return sprintf(
+        'CASE WHEN playtime >= %d THEN %s ELSE -1 END DESC, (kills + assists) DESC, kills DESC',
+        $threshold,
+        $ratioExpr
+    );
 }
 
 function wt_update_cached_personaname(string $steamId, ?string $personaname): void
@@ -371,7 +469,7 @@ function wt_fetch_log_players(array $logIds): array
         . 'lp.weapon5_name, lp.weapon5_shots, lp.weapon5_hits, lp.weapon5_damage, lp.weapon5_defindex, '
         . 'lp.weapon6_name, lp.weapon6_shots, lp.weapon6_hits, lp.weapon6_damage, lp.weapon6_defindex, '
         . 'lp.airshots_soldier, lp.airshots_soldier_height, lp.airshots_demoman, lp.airshots_demoman_height, lp.airshots_sniper, lp.airshots_sniper_height, lp.airshots_medic, lp.airshots_medic_height, '
-        . 'lp.shots_scout, lp.hits_scout, lp.shots_sniper, lp.hits_sniper, lp.shots_soldier, lp.hits_soldier, lp.shots_demoman, lp.hits_demoman, lp.shots_medic, lp.hits_medic, lp.shots_heavy, lp.hits_heavy, lp.shots_pyro, lp.hits_pyro, lp.shots_spy, lp.hits_spy, lp.shots_engineer, lp.hits_engineer, '
+        . 'lp.shots_shotguns, lp.hits_shotguns, lp.shots_scatterguns, lp.hits_scatterguns, lp.shots_pistols, lp.hits_pistols, lp.shots_rocketlaunchers, lp.hits_rocketlaunchers, lp.shots_grenadelaunchers, lp.hits_grenadelaunchers, lp.shots_stickylaunchers, lp.hits_stickylaunchers, lp.shots_snipers, lp.hits_snipers, lp.shots_revolvers, lp.hits_revolvers, '
         . 'COALESCE(lp.classes_mask, 0) AS classes_mask, lp.is_admin, lp.last_updated '
         . 'FROM %s lp LEFT JOIN %s wt ON wt.steamid = lp.steamid WHERE lp.log_id IN (%s) ORDER BY lp.kills DESC, lp.assists DESC',
         wt_log_players_table(),
@@ -384,7 +482,7 @@ function wt_fetch_log_players(array $logIds): array
         . 'lp.weapon2_name, lp.weapon2_shots, lp.weapon2_hits, lp.weapon2_damage, lp.weapon2_defindex, '
         . 'lp.weapon3_name, lp.weapon3_shots, lp.weapon3_hits, lp.weapon3_damage, lp.weapon3_defindex, '
         . 'lp.airshots_soldier, lp.airshots_soldier_height, lp.airshots_demoman, lp.airshots_demoman_height, lp.airshots_sniper, lp.airshots_sniper_height, lp.airshots_medic, lp.airshots_medic_height, '
-        . 'lp.shots_scout, lp.hits_scout, lp.shots_sniper, lp.hits_sniper, lp.shots_soldier, lp.hits_soldier, lp.shots_demoman, lp.hits_demoman, lp.shots_medic, lp.hits_medic, lp.shots_heavy, lp.hits_heavy, lp.shots_pyro, lp.hits_pyro, lp.shots_spy, lp.hits_spy, lp.shots_engineer, lp.hits_engineer, '
+        . 'lp.shots_shotguns, lp.hits_shotguns, lp.shots_scatterguns, lp.hits_scatterguns, lp.shots_pistols, lp.hits_pistols, lp.shots_rocketlaunchers, lp.hits_rocketlaunchers, lp.shots_grenadelaunchers, lp.hits_grenadelaunchers, lp.shots_stickylaunchers, lp.hits_stickylaunchers, lp.shots_snipers, lp.hits_snipers, lp.shots_revolvers, lp.hits_revolvers, '
         . 'COALESCE(lp.classes_mask, 0) AS classes_mask, lp.is_admin, lp.last_updated '
         . 'FROM %s lp LEFT JOIN %s wt ON wt.steamid = lp.steamid WHERE lp.log_id IN (%s) ORDER BY lp.kills DESC, lp.assists DESC',
         wt_log_players_table(),
@@ -469,39 +567,7 @@ function wt_fetch_log_players(array $logIds): array
             }
             $entry['weapon_summary'] = $weaponSummary;
 
-            $overallShots = (int)($entry['shots'] ?? 0);
-            $overallHits = (int)($entry['hits'] ?? 0);
-            $overallAccuracy = $overallShots > 0 ? ($overallHits / max($overallShots, 1) * 100.0) : null;
-            $classAccuracySummary = [];
-            foreach (WT_CLASS_METADATA as $classId => $meta) {
-                $slug = $meta['slug'] ?? '';
-                $shotsKey = "shots_{$slug}";
-                $hitsKey = "hits_{$slug}";
-                $classShots = (int)($entry[$shotsKey] ?? 0);
-                $classHits = (int)($entry[$hitsKey] ?? 0);
-                if ($classShots <= 0) {
-                    continue;
-                }
-                $classAccuracySummary[] = [
-                    'class_id' => $classId,
-                    'label' => $meta['label'] ?? ucfirst($slug),
-                    'slug' => $slug,
-                    'accuracy' => ($classShots > 0) ? ($classHits / $classShots * 100.0) : null,
-                    'shots' => $classShots,
-                    'hits' => $classHits,
-                ];
-            }
-            if (empty($classAccuracySummary) && $overallAccuracy !== null) {
-                $classAccuracySummary[] = [
-                    'class_id' => 0,
-                    'label' => 'Overall',
-                    'slug' => 'overall',
-                    'accuracy' => $overallAccuracy,
-                    'shots' => $overallShots,
-                    'hits' => $overallHits,
-                ];
-            }
-            $entry['class_accuracy_summary'] = $classAccuracySummary;
+            wt_assign_weapon_category_summary($entry, 'weapon_category_summary', 'primary_weapon_accuracy');
 
             if (!empty($weaponSummary)) {
                 usort($weaponSummary, static function (array $a, array $b): int {
@@ -849,9 +915,12 @@ function wt_refresh_current_log(): void
     ]);
 }
 
-function wt_fetch_logs(int $limit = 60, string $scope = 'regular'): array
+function wt_fetch_logs(int $limit = 15, string $scope = 'regular', int $page = 1): array
 {
-    $limit = max(1, min($limit, 100));
+    $limit = max(1, min($limit, 1000));
+    $page = max(1, $page);
+    $offset = ($page - 1) * $limit;
+    
     $scope = wt_logs_normalize_scope($scope);
     $bounds = wt_logs_scope_bounds($scope);
     $minPlayers = $bounds['min'] ?? null;
@@ -859,7 +928,11 @@ function wt_fetch_logs(int $limit = 60, string $scope = 'regular'): array
 
     wt_refresh_current_log();
 
-    $fetchLimit = min($limit * 3, 300);
+    // Fetch slightly more to handle potential filtering (though we filter by player_count in SQL now mostly)
+    // But since we are paginating, we should trust the SQL limit/offset more.
+    // However, the original code filtered by actual player array count which might differ from player_count column.
+    // We will trust player_count column for pagination to work correctly in SQL.
+    
     $whereParts = ['player_count > 0'];
     if ($minPlayers !== null && $minPlayers > 1) {
         $whereParts[] = 'player_count >= ' . (int)$minPlayers;
@@ -870,10 +943,11 @@ function wt_fetch_logs(int $limit = 60, string $scope = 'regular'): array
     $whereClause = implode(' AND ', $whereParts);
 
     $sql = sprintf(
-        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s WHERE %s ORDER BY started_at DESC LIMIT %d',
+        'SELECT log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at FROM %s WHERE %s ORDER BY started_at DESC LIMIT %d OFFSET %d',
         wt_logs_table(),
         $whereClause,
-        $fetchLimit
+        $limit,
+        $offset
     );
 
     $pdo = wt_pdo();
@@ -892,28 +966,164 @@ function wt_fetch_logs(int $limit = 60, string $scope = 'regular'): array
     }
     unset($log);
 
-    $logs = array_values(array_filter($logs, static function ($log) use ($minPlayers, $maxPlayers) {
-        $count = (int)($log['player_count'] ?? 0);
-        if ($count <= 0 && !empty($log['players']) && is_array($log['players'])) {
-            $count = count($log['players']);
-        }
-        if ($count <= 0) {
-            return false;
-        }
-        if ($minPlayers !== null && $count < $minPlayers) {
-            return false;
-        }
-        if ($maxPlayers !== null && $count > $maxPlayers) {
-            return false;
-        }
-        return true;
-    }));
+    // We are not filtering by array count anymore to preserve pagination consistency.
+    // The database cleanup script ensures bad logs are gone.
+    
+    return array_values($logs);
+}
 
-    if (count($logs) > $limit) {
-        $logs = array_slice($logs, 0, $limit);
+function wt_get_cached_logs(int $limit = 0, string $scope = 'regular', int $page = 1): array
+{
+    $perPage = wt_logs_per_page();
+    $limit = (int)$limit;
+    if ($limit <= 0) {
+        $limit = $perPage;
+    }
+    $page = max(1, (int)$page);
+    $scope = wt_logs_normalize_scope($scope);
+    $maxPages = wt_logs_max_pages();
+
+    $metaFile = __DIR__ . '/cache/logs_meta.json';
+    $cacheMeta = [];
+    if (file_exists($metaFile)) {
+        $cacheMeta = json_decode(file_get_contents($metaFile), true) ?? [];
     }
 
-    return $logs;
+    $pdo = wt_pdo();
+    $stmt = $pdo->query("SELECT MAX(updated_at) as last_update, COUNT(*) as total_logs FROM " . wt_logs_table());
+    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : [];
+    $lastDbUpdate = (int)($row['last_update'] ?? 0);
+    $totalLogsActual = (int)($row['total_logs'] ?? 0);
+    $effectiveTotal = $totalLogsActual;
+    if ($maxPages > 0) {
+        $maxDisplay = $maxPages * $limit;
+        if ($effectiveTotal > $maxDisplay) {
+            $effectiveTotal = $maxDisplay;
+        }
+    }
+    $totalPages = max(1, (int)ceil(max($effectiveTotal, 1) / $limit));
+    if ($page > $totalPages) {
+        $page = $totalPages;
+    }
+    $cacheFile = __DIR__ . '/cache/logs_page_' . $page . '_' . $scope . '.html';
+
+    $cachedUpdate = (int)($cacheMeta['last_update'] ?? 0);
+    $cachedTotal = (int)($cacheMeta['total_logs'] ?? 0);
+    $cachedPages = (int)($cacheMeta['total_pages'] ?? 0);
+
+    if ($lastDbUpdate === $cachedUpdate && $effectiveTotal === $cachedTotal && $totalPages === $cachedPages && file_exists($cacheFile)) {
+        return [
+            'html' => file_get_contents($cacheFile),
+            'from_cache' => true,
+            'last_update' => $lastDbUpdate,
+            'total_logs' => $effectiveTotal,
+            'total_pages' => $totalPages,
+            'page' => $page,
+        ];
+    }
+
+    $logs = wt_fetch_logs($limit, $scope, $page);
+
+    return [
+        'logs' => $logs,
+        'from_cache' => false,
+        'last_update' => $lastDbUpdate,
+        'total_logs' => $effectiveTotal,
+        'total_pages' => $totalPages,
+        'page' => $page,
+    ];
+}
+
+function wt_admin_cache_file(): string
+{
+    return __DIR__ . '/cache/admins_cache.json';
+}
+
+function wt_admin_cache_ttl(): int
+{
+    return 86400;
+}
+
+function wt_get_admin_cache(bool $forceRefresh = false): array
+{
+    static $cachedAdmins = null;
+    if ($cachedAdmins !== null && !$forceRefresh) {
+        return $cachedAdmins;
+    }
+
+    $cacheFile = wt_admin_cache_file();
+    $now = time();
+    $ttl = wt_admin_cache_ttl();
+    $needsRefresh = $forceRefresh;
+
+    if (!$needsRefresh && is_file($cacheFile)) {
+        $mtime = (int)@filemtime($cacheFile);
+        if ($mtime > 0 && ($now - $mtime) <= $ttl) {
+            $content = @file_get_contents($cacheFile);
+            if ($content !== false) {
+                $data = json_decode($content, true);
+                if (is_array($data) && isset($data['admins']) && is_array($data['admins'])) {
+                    $normalized = [];
+                    foreach ($data['admins'] as $steamId => $flag) {
+                        $steamId = (string)$steamId;
+                        if ($steamId === '') {
+                            continue;
+                        }
+                        $normalized[$steamId] = !empty($flag);
+                    }
+                    $cachedAdmins = $normalized;
+                    return $cachedAdmins;
+                }
+            }
+        } else {
+            $needsRefresh = true;
+        }
+    } else {
+        $needsRefresh = true;
+    }
+
+    $cachedAdmins = wt_refresh_admin_cache();
+    return $cachedAdmins;
+}
+
+function wt_refresh_admin_cache(): array
+{
+    $pdo = wt_pdo();
+    $sql = 'SELECT steamid64, admin_status FROM ' . WT_ADMINS_TABLE;
+    $stmt = $pdo->query($sql);
+    $admins = [];
+    if ($stmt) {
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $steam64 = trim((string)($row['steamid64'] ?? ''));
+            if ($steam64 === '') {
+                continue;
+            }
+            $status = strtolower(trim((string)($row['admin_status'] ?? '')));
+            $admins[$steam64] = in_array($status, ['1', 'yes', 'true', 'on'], true);
+        }
+    } else {
+        error_log('[WT] Failed to query admins table for cache refresh.');
+    }
+
+    $payload = [
+        'generated_at' => time(),
+        'admins' => $admins,
+    ];
+
+    $cacheFile = wt_admin_cache_file();
+    $cacheDir = dirname($cacheFile);
+    if (!is_dir($cacheDir)) {
+        @mkdir($cacheDir, 0775, true);
+    }
+
+    $json = json_encode($payload, JSON_PRETTY_PRINT);
+    if ($json !== false) {
+        $tmpFile = $cacheFile . '.tmp';
+        file_put_contents($tmpFile, $json);
+        @rename($tmpFile, $cacheFile);
+    }
+
+    return $admins;
 }
 
 function wt_fetch_admin_flags(array $steamIds): array
@@ -923,20 +1133,16 @@ function wt_fetch_admin_flags(array $steamIds): array
         return [];
     }
 
-    $placeholders = implode(',', array_fill(0, count($steamIds), '?'));
-    $sql = sprintf('SELECT steamid, is_admin FROM %s WHERE steamid IN (%s)', WT_DB_TABLE, $placeholders);
-
-    $pdo = wt_pdo();
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($steamIds);
-
+    $adminMap = wt_get_admin_cache(isset($_GET['refresh_admin_cache']));
     $flags = [];
-    foreach ($stmt->fetchAll() as $row) {
-        $steamId = (string)($row['steamid'] ?? '');
+    foreach ($steamIds as $steamId) {
+        $steamId = (string)$steamId;
         if ($steamId === '') {
             continue;
         }
-        $flags[$steamId] = !empty($row['is_admin']);
+        if (isset($adminMap[$steamId])) {
+            $flags[$steamId] = !empty($adminMap[$steamId]);
+        }
     }
 
     return $flags;
@@ -1088,6 +1294,25 @@ function wt_fetch_map_leaderboard(string $groupKey): array
         wt_cache_set($cacheKey, $rows, $cacheTtl);
     }
 
+    return $rows;
+}
+
+function wt_fetch_map_popularity(int $limit = 50): array
+{
+    $limit = max(1, min($limit, 500));
+    $pdo = wt_pdo();
+    $sql = 'SELECT map_name, category, sub_category, popularity FROM mapsdb ORDER BY popularity DESC, map_name ASC LIMIT :limit';
+    $stmt = $pdo->prepare($sql);
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    foreach ($rows as &$row) {
+        $row['map_name'] = (string)($row['map_name'] ?? '');
+        $row['category'] = (string)($row['category'] ?? '');
+        $row['sub_category'] = (string)($row['sub_category'] ?? '');
+        $row['popularity'] = (int)($row['popularity'] ?? 0);
+    }
+    unset($row);
     return $rows;
 }
 
@@ -1673,6 +1898,7 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
     $offset = max(0, $offset);
     $pdo = wt_pdo();
     $search = $search !== null ? trim($search) : '';
+    $orderClause = wt_stats_order_clause();
 
     if ($search !== '') {
         $searchLower = function_exists('mb_strtolower') ? mb_strtolower($search, 'UTF-8') : strtolower($search);
@@ -1693,8 +1919,9 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
         }
 
         $sql = sprintf(
-            'SELECT * FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact ORDER BY (kills + assists) DESC, kills DESC LIMIT :limit OFFSET :offset',
-            WT_DB_TABLE
+            'SELECT * FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact ORDER BY %s LIMIT :limit OFFSET :offset',
+            WT_DB_TABLE,
+            $orderClause
         );
         $stmt = $pdo->prepare($sql);
         $stmt->bindValue(':term', $likeTerm, PDO::PARAM_STR);
@@ -1726,8 +1953,9 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
     }
 
     $sql = sprintf(
-        'SELECT * FROM %s ORDER BY (kills + assists) DESC, kills DESC LIMIT :limit OFFSET :offset',
-        WT_DB_TABLE
+        'SELECT * FROM %s ORDER BY %s LIMIT :limit OFFSET :offset',
+        WT_DB_TABLE,
+        $orderClause
     );
     $stmt = $pdo->prepare($sql);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
@@ -2118,15 +2346,30 @@ function wt_fragment_paths(string $type, string $key): array
     ];
 }
 
-function wt_fragment_load(string $type, string $key, string $revision): ?array
+function wt_fragment_load(string $type, string $key, string $revision, ?int $maxAgeSeconds = null): ?array
 {
     $paths = wt_fragment_paths($type, $key);
     if (!is_file($paths['meta']) || !is_file($paths['html'])) {
         return null;
     }
     $meta = json_decode(file_get_contents($paths['meta']), true);
-    if (!is_array($meta) || ($meta['revision'] ?? null) !== $revision) {
+    if (!is_array($meta)) {
         return null;
+    }
+    $storedRevision = $meta['revision'] ?? null;
+    if ($storedRevision !== $revision) {
+        if ($maxAgeSeconds !== null) {
+            $generatedAt = (int)($meta['generated_at'] ?? 0);
+            if ($generatedAt > 0 && (time() - $generatedAt) <= $maxAgeSeconds) {
+                // Serve stale cache within max age window
+                $meta['stale_revision'] = $storedRevision;
+                $meta['revision'] = $revision;
+            } else {
+                return null;
+            }
+        } else {
+            return null;
+        }
     }
     $html = file_get_contents($paths['html']);
     if ($html === false) {
@@ -2200,7 +2443,11 @@ function wt_get_cached_cumulative(string $search, int $page, int $perPage, ?stri
 {
     $key = sha1(json_encode([$search, $page, $perPage, $focusedPlayer]));
     $revision = wt_cumulative_revision();
-    $cached = wt_fragment_load('cumulative', $key, $revision);
+    $ttl = defined('WT_CUMULATIVE_FRAGMENT_TTL') ? (int)WT_CUMULATIVE_FRAGMENT_TTL : 60;
+    if ($ttl <= 0) {
+        $ttl = null;
+    }
+    $cached = wt_fragment_load('cumulative', $key, $revision, $ttl);
     if ($cached) {
         $cached['from_cache'] = true;
         return $cached;
@@ -2265,34 +2512,9 @@ function wt_render_logs_fragment(array $context): string
     return ob_get_clean();
 }
 
-function wt_get_cached_logs(int $limit = 60, string $scope = 'regular'): array
-{
-    $limit = max(1, min($limit, 100));
-    $scope = wt_logs_normalize_scope($scope);
-    $key = sha1('limit:' . $limit . ':scope:' . $scope);
-    $revision = wt_logs_revision();
-    $cached = wt_fragment_load('logs', $key, $revision);
-    if ($cached) {
-        $cached['from_cache'] = true;
-        return $cached;
-    }
 
-    $logs = wt_fetch_logs($limit, $scope);
-    $context = [
-        'logs' => $logs,
-    ];
-    $html = wt_render_logs_fragment($context);
-    $payload = [
-        'html' => $html,
-        'logs' => $logs,
-        'limit' => $limit,
-        'scope' => $scope,
-        'revision' => $revision,
-    ];
-    wt_fragment_save('logs', $key, $revision, $payload);
-    $payload['from_cache'] = false;
-    return $payload;
-}
+
+
 
 function wt_static_logs_paths(int $limit, string $scope = 'regular'): array
 {
@@ -2511,23 +2733,48 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId, string 
         $isAdmin = !empty($row['is_admin']);
         $playtimeHuman = (string)($row['playtime_human'] ?? wt_format_playtime($playtimeSeconds));
         $overallAccuracy = isset($row['accuracy_overall']) ? (float)$row['accuracy_overall'] : ($totalShots > 0 ? ($totalHits / max($totalShots, 1) * 100.0) : 0.0);
-        $topClassData = $row['accuracy_top_class'] ?? null;
-        $classAccuracies = is_array($row['accuracy_classes'] ?? null) ? $row['accuracy_classes'] : [];
 
         $topAccuracyValue = null;
         $topAccuracyShots = 0;
         $topAccuracyHits = 0;
         $topAccuracyLabel = null;
-        $topAccuracyIcon = null;
         $topAccuracyClassId = 0;
+        $favoriteClassId = isset($row['favorite_class']) ? (int)$row['favorite_class'] : 0;
+        $favoriteClassMeta = WT_CLASS_METADATA[$favoriteClassId] ?? null;
+        $favoriteClassSlug = $favoriteClassMeta['slug'] ?? null;
+        $favoriteClassLabel = $favoriteClassMeta['label'] ?? null;
+        $favoriteClassIcon = $favoriteClassSlug ? wt_class_icon_url($favoriteClassSlug) : null;
+        if ($favoriteClassId > 0) {
+            $topAccuracyClassId = $favoriteClassId;
+        }
 
-        if (is_array($topClassData) && isset($topClassData['accuracy']) && $topClassData['accuracy'] !== null) {
-            $topAccuracyValue = (float)$topClassData['accuracy'];
-            $topAccuracyShots = (int)($topClassData['shots'] ?? 0);
-            $topAccuracyHits = (int)($topClassData['hits'] ?? 0);
-            $topAccuracyLabel = $topClassData['label'] ?? null;
-            $topAccuracyIcon = $topClassData['icon'] ?? null;
-            $topAccuracyClassId = (int)($topClassData['class_id'] ?? 0);
+        $bestWeaponAccuracy = -1.0;
+        $bestWeaponShots = 0;
+        $bestWeaponHits = 0;
+        $bestWeaponLabel = null;
+
+        foreach (wt_weapon_category_metadata() as $slug => $meta) {
+            $shotsKey = 'shots_' . $slug;
+            $hitsKey = 'hits_' . $slug;
+            $shotsValue = isset($row[$shotsKey]) ? (int)$row[$shotsKey] : 0;
+            $hitsValue = isset($row[$hitsKey]) ? (int)$row[$hitsKey] : 0;
+            if ($shotsValue <= 0) {
+                continue;
+            }
+            $accValue = ($hitsValue / max($shotsValue, 1)) * 100.0;
+            if ($bestWeaponAccuracy < 0.0 || $accValue > $bestWeaponAccuracy || ($accValue === $bestWeaponAccuracy && $shotsValue > $bestWeaponShots)) {
+                $bestWeaponAccuracy = $accValue;
+                $bestWeaponShots = $shotsValue;
+                $bestWeaponHits = $hitsValue;
+                $bestWeaponLabel = $meta['label'] ?? ucfirst($slug);
+            }
+        }
+
+        if ($bestWeaponAccuracy >= 0.0) {
+            $topAccuracyValue = $bestWeaponAccuracy;
+            $topAccuracyShots = $bestWeaponShots;
+            $topAccuracyHits = $bestWeaponHits;
+            $topAccuracyLabel = $bestWeaponLabel;
         } elseif ($totalShots > 0) {
             $topAccuracyValue = $overallAccuracy;
             $topAccuracyShots = $totalShots;
@@ -2535,57 +2782,35 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId, string 
             $topAccuracyLabel = 'Overall';
         }
 
-        $favoriteClassId = isset($row['favorite_class']) ? (int)$row['favorite_class'] : 0;
         $accuracyTooltipParts = [];
-        $favoriteTooltip = null;
-        foreach (WT_CLASS_METADATA as $classId => $meta) {
-            $classData = $classAccuracies[$classId] ?? null;
-            $classShots = isset($classData['shots']) ? (int)$classData['shots'] : 0;
-            $classHits = isset($classData['hits']) ? (int)$classData['hits'] : 0;
-            $classAccuracyValue = $classData['accuracy'] ?? null;
-            $tooltipSegment = null;
-            if ($classShots > 0 && $classAccuracyValue !== null) {
-                $tooltipSegment = sprintf(
-                    '%s: %s (%d/%d)',
-                    $meta['label'],
-                    number_format((float)$classAccuracyValue, 1) . '%',
-                    $classHits,
-                    $classShots
-                );
-            } elseif ($classId === $favoriteClassId) {
-                $tooltipSegment = sprintf(
-                    '%s: %s',
-                    $meta['label'],
-                    'No shots recorded'
-                );
-            }
-
-            if ($tooltipSegment === null) {
-                continue;
-            }
-
-            if ($classId === $favoriteClassId) {
-                $favoriteTooltip = $tooltipSegment;
-            } else {
-                $accuracyTooltipParts[] = $tooltipSegment;
-            }
+        if ($totalShots > 0) {
+            $accuracyTooltipParts[] = sprintf(
+                'Overall: %s (%d/%d)',
+                number_format($overallAccuracy, 1) . '%',
+                $totalHits,
+                $totalShots
+            );
+        } else {
+            $accuracyTooltipParts[] = 'No shots recorded';
         }
 
-        if ($favoriteTooltip !== null) {
-            array_unshift($accuracyTooltipParts, $favoriteTooltip);
+        $weaponSegments = [];
+        foreach (wt_weapon_category_metadata() as $slug => $meta) {
+            $shotsKey = 'shots_' . $slug;
+            $hitsKey = 'hits_' . $slug;
+            $shotsValue = isset($row[$shotsKey]) ? (int)$row[$shotsKey] : 0;
+            $hitsValue = isset($row[$hitsKey]) ? (int)$row[$hitsKey] : 0;
+            $label = $meta['label'] ?? ucfirst($slug);
+            $weaponSegments[] = sprintf(
+                '%s: %s shots / %s hits',
+                $label,
+                number_format($shotsValue),
+                number_format($hitsValue)
+            );
         }
 
-        if (empty($accuracyTooltipParts)) {
-            if ($totalShots > 0) {
-                $accuracyTooltipParts[] = sprintf(
-                    'Overall: %s (%d/%d)',
-                    number_format($overallAccuracy, 1) . '%',
-                    $totalHits,
-                    $totalShots
-                );
-            } else {
-                $accuracyTooltipParts[] = 'No shots recorded';
-            }
+        if (!empty($weaponSegments)) {
+            $accuracyTooltipParts[] = implode('; ', $weaponSegments);
         }
 
         $accuracyTooltip = implode(' • ', $accuracyTooltipParts);
@@ -2673,11 +2898,34 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId, string 
         echo '<td class="stat-accuracy-cell"', $accuracyCellAttr, '>';
         if ($topAccuracyValue !== null) {
             echo '<span class="stat-accuracy-value">', number_format($topAccuracyValue, 1), '%</span>';
-            if ($topAccuracyIcon) {
-                echo '<img class="stat-accuracy-icon" src="', htmlspecialchars($topAccuracyIcon, ENT_QUOTES, 'UTF-8'), '" alt="', htmlspecialchars($topAccuracyLabel ?? '', ENT_QUOTES, 'UTF-8'), '">';
-            }
         } else {
             echo '—';
+        }
+        if ($favoriteClassIcon && $favoriteClassLabel) {
+            $favWeaponMap = [
+                1 => ['scatterguns', 'pistols'],           // Scout
+                2 => ['snipers'],                          // Sniper
+                3 => ['rocketlaunchers', 'shotguns'],      // Soldier
+                4 => ['grenadelaunchers', 'stickylaunchers'], // Demoman
+                5 => [],                                   // Medic (no specific mapping requested)
+                6 => [],                                   // Heavy
+                7 => [],                                   // Pyro
+                8 => ['revolvers'],                        // Spy
+                9 => ['shotguns', 'pistols'],              // Engineer
+            ];
+            $segments = [];
+            $mapped = $favWeaponMap[$favoriteClassId] ?? [];
+            foreach ($mapped as $slug) {
+                $label = WT_WEAPON_CATEGORY_METADATA[$slug]['label'] ?? ucfirst($slug);
+                $shotsValue = isset($row['shots_' . $slug]) ? (int)$row['shots_' . $slug] : 0;
+                $hitsValue = isset($row['hits_' . $slug]) ? (int)$row['hits_' . $slug] : 0;
+                $segments[] = sprintf('%s: %s shots / %s hits', $label, number_format($shotsValue), number_format($hitsValue));
+            }
+            $title = 'Favorite class: ' . $favoriteClassLabel;
+            if (!empty($segments)) {
+                $title .= ' | ' . implode(', ', $segments);
+            }
+            echo '<img class="stat-accuracy-icon" src="', htmlspecialchars($favoriteClassIcon, ENT_QUOTES, 'UTF-8'), '" alt="', htmlspecialchars($favoriteClassLabel, ENT_QUOTES, 'UTF-8'), '" title="', htmlspecialchars($title, ENT_QUOTES, 'UTF-8'), '">';
         }
         echo '</td>';
         echo '<td>', number_format($airshots), '</td>';
@@ -2690,4 +2938,75 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId, string 
         echo '</tr>';
     }
     return ob_get_clean();
+}
+
+function wt_render_single_log(array $log, int $index = -1): string
+{
+    $logId = $log['log_id'] ?? null;
+    $endedAt = (int)($log['ended_at'] ?? 0);
+    $isFinalized = $endedAt > 0;
+    $cacheFile = null;
+
+    if ($isFinalized && $logId) {
+        $cacheDir = __DIR__ . '/cache/logs';
+        if (!is_dir($cacheDir)) {
+            mkdir($cacheDir, 0777, true);
+        }
+        $cacheFile = $cacheDir . '/log_' . $logId . '.html';
+        if (file_exists($cacheFile)) {
+            return file_get_contents($cacheFile);
+        }
+    }
+
+    ob_start();
+    include __DIR__ . '/templates/single_log.php';
+    $html = ob_get_clean();
+
+    if ($isFinalized && $cacheFile) {
+        file_put_contents($cacheFile, $html);
+    }
+
+    return $html;
+}
+
+function wt_logs_per_page(): int
+{
+    static $perPage = null;
+    if ($perPage !== null) {
+        return $perPage;
+    }
+    $perPage = defined('WT_LOGS_PAGE_SIZE') ? max(1, (int)WT_LOGS_PAGE_SIZE) : 25;
+    return $perPage;
+}
+
+function wt_logs_max_pages(): int
+{
+    static $maxPages = null;
+    if ($maxPages !== null) {
+        return $maxPages;
+    }
+    $maxPages = defined('WT_LOGS_MAX_PAGES') ? (int)WT_LOGS_MAX_PAGES : 2;
+    if ($maxPages < 1) {
+        $maxPages = 1;
+    }
+    return $maxPages;
+}
+
+function wt_logs_cache_store(string $scope, string $html, int $lastUpdate, int $totalLogs): void
+{
+    $cacheFile = __DIR__ . '/cache/logs_page_1_' . $scope . '.html';
+    $metaFile = __DIR__ . '/cache/logs_meta.json';
+    
+    if (!is_dir(__DIR__ . '/cache')) {
+        mkdir(__DIR__ . '/cache', 0777, true);
+    }
+    
+    file_put_contents($cacheFile, $html);
+    
+    $meta = [
+        'last_update' => $lastUpdate,
+        'total_logs' => $totalLogs,
+        'total_pages' => max(1, (int)ceil(max($totalLogs, 1) / wt_logs_per_page()))
+    ];
+    file_put_contents($metaFile, json_encode($meta));
 }

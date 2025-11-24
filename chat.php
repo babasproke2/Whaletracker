@@ -27,6 +27,7 @@ function wt_chat_db_init(PDO $pdo): void {
             message TEXT NOT NULL,
             server_ip VARCHAR(64) NULL,
             server_port INT NULL,
+            alert TINYINT(1) NOT NULL DEFAULT 1,
             INDEX(created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
@@ -43,6 +44,13 @@ function wt_chat_db_init(PDO $pdo): void {
             INDEX(created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
+    try {
+        $pdo->exec('ALTER TABLE whaletracker_chat ADD COLUMN alert TINYINT(1) NOT NULL DEFAULT 1 AFTER server_port');
+    } catch (Throwable $e) {
+        if (stripos($e->getMessage(), 'Duplicate column name') === false) {
+            throw $e;
+        }
+    }
 }
 
 function wt_chat_server_identity(): array {
@@ -62,9 +70,47 @@ function wt_chat_server_identity(): array {
     return $cached;
 }
 
-function wt_chat_fetch(PDO $pdo): array {
-    $stmt = $pdo->query('SELECT id, created_at, steamid, personaname, iphash, message FROM whaletracker_chat ORDER BY id ASC');
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+function wt_chat_fetch(PDO $pdo, int $limit = 50, ?int $beforeId = null, ?int $afterId = null, bool $alertsOnly = false): array {
+    $limit = max(1, min($limit, 200));
+    $rows = [];
+    $selectCols = 'SELECT id, created_at, steamid, personaname, iphash, message, alert FROM whaletracker_chat';
+    if ($afterId !== null && $afterId > 0) {
+        $sql = $selectCols . ' WHERE id > :after';
+        if ($alertsOnly) {
+            $sql .= ' AND alert = 1';
+        }
+        $sql .= ' ORDER BY id ASC LIMIT :limit';
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':after', $afterId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } else {
+        $queryLimit = $limit + 1;
+        $sql = $selectCols;
+        $conditions = [];
+        if ($beforeId !== null && $beforeId > 0) {
+            $conditions[] = 'id < :before';
+        }
+        if ($alertsOnly) {
+            $conditions[] = 'alert = 1';
+        }
+        if (!empty($conditions)) {
+            $sql .= ' WHERE ' . implode(' AND ', $conditions);
+        }
+        $sql .= ' ORDER BY id DESC LIMIT ' . $queryLimit;
+        $stmt = $pdo->prepare($sql);
+        if ($beforeId !== null && $beforeId > 0) {
+            $stmt->bindValue(':before', $beforeId, PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $hasExtra = count($rows) > $limit;
+        if ($hasExtra) {
+            array_pop($rows);
+        }
+        $rows = array_reverse($rows);
+    }
 
     // Build avatar map for steamids
     $steamIds = [];
@@ -103,10 +149,23 @@ function wt_chat_fetch(PDO $pdo): array {
             'name' => $r['personaname'] ?: ($profile['personaname'] ?? ($sid ?: ($iphash ? ('Web Player #' . substr($iphash, 0, 6)) : 'Unknown'))),
             'avatar' => $avatar ?: $defaultAvatar,
             'message' => (string)($r['message'] ?? ''),
+            'alert' => ((int)($r['alert'] ?? 1)) === 1,
         ];
     }
 
-    return [$messages, $latestId];
+    $oldestId = !empty($messages) ? (int)($messages[0]['id'] ?? 0) : null;
+    $newestId = !empty($messages) ? (int)($messages[count($messages) - 1]['id'] ?? 0) : null;
+    $hasMoreOlder = false;
+    if ($afterId === null) {
+        $hasMoreOlder = isset($hasExtra) ? $hasExtra : false;
+    }
+
+    return [$messages, [
+        'latest_id' => $latestId,
+        'oldest_id' => $oldestId,
+        'newest_id' => $newestId,
+        'has_more_older' => $hasMoreOlder,
+    ]];
 }
 
 function wt_short_iphash(): string {
@@ -123,50 +182,26 @@ function wt_chat_webnames(): array {
     if (is_array($webnames)) {
         return $webnames;
     }
-    $path = '/home/kogasa/hlserver/tf2/tf/addons/sourcemod/configs/filters.cfg';
-    if (!is_file($path)) {
-        return $webnames = [];
+
+    try {
+        $pdo = wt_pdo();
+        $stmt = $pdo->query('SELECT name, color FROM whaletracker_webnames ORDER BY name ASC');
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $e) {
+        wt_chat_log('webnames db lookup failed: ' . $e->getMessage());
+        $rows = [];
     }
-    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    if ($lines === false) {
-        return $webnames = [];
+
+    $webnames = [];
+    foreach ($rows as $row) {
+        $name = trim((string)($row['name'] ?? ''));
+        $color = trim((string)($row['color'] ?? ''));
+        if ($name === '' || $color === '') {
+            continue;
+        }
+        $webnames[] = ['name' => $name, 'color' => $color];
     }
-    $section = false;
-    $depth = 0;
-    $result = [];
-    foreach ($lines as $line) {
-        $trimmed = trim($line);
-        if ($trimmed === '' || $trimmed[0] === '/' || $trimmed[0] === ';') {
-            continue;
-        }
-        if (!$section) {
-            if (strpos($trimmed, '"webnames"') === 0) {
-                $section = true;
-            }
-            continue;
-        }
-        if ($trimmed === '{') {
-            $depth++;
-            continue;
-        }
-        if ($trimmed === '}') {
-            if ($depth <= 0) {
-                break;
-            }
-            $depth--;
-            if ($depth === 0) {
-                break;
-            }
-            continue;
-        }
-        if ($depth > 0 && preg_match('/"([^"]+)"\s+"([^"]+)"/', $trimmed, $matches)) {
-            $result[] = [
-                'name' => $matches[1],
-                'color' => $matches[2],
-            ];
-        }
-    }
-    return $webnames = $result;
+    return $webnames;
 }
 
 function wt_chat_webname_image_map(): array {
@@ -188,6 +223,28 @@ function wt_chat_webname_image_map(): array {
         $map[strtolower($name)] = '/stats/' . rawurlencode($filename);
     }
     return $map;
+}
+
+function wt_chat_find_persona_option(string $query): ?array {
+    $query = trim($query);
+    if ($query === '') {
+        return null;
+    }
+    $options = wt_chat_webnames();
+    if (empty($options)) {
+        wt_chat_log('Webnames list is empty; unable to match persona command "' . $query . '"');
+        return null;
+    }
+    foreach ($options as $option) {
+        $name = trim((string)($option['name'] ?? ''));
+        if ($name === '') {
+            continue;
+        }
+        if (stripos($name, $query) !== false) {
+            return $option;
+        }
+    }
+    return null;
 }
 
 function wt_chat_persona_avatar(?string $personaDisplay): ?string {
@@ -214,13 +271,7 @@ function wt_chat_session_persona(): array {
         return $_SESSION['wt_chat_persona'];
     }
     $options = wt_chat_webnames();
-    if (empty($options)) {
-        $persona = [
-            'name' => 'Web Player',
-            'color' => '{default}',
-            'display' => '{gold}[Web]{default} Web Player{default}',
-        ];
-    } else {
+    if (!empty($options)) {
         $choice = $options[random_int(0, count($options) - 1)];
         $display = '{gold}[Web]{default} ' . $choice['color'] . $choice['name'];
         if (substr($display, -9) !== '{default}') {
@@ -229,6 +280,15 @@ function wt_chat_session_persona(): array {
         $persona = [
             'name' => $choice['name'],
             'color' => $choice['color'],
+            'display' => $display,
+        ];
+    } else {
+        // No webnames available; generate a unique guest label so we never use the plain Web Player text.
+        $tag = substr(bin2hex(random_bytes(3)), 0, 6);
+        $display = '{gold}[Web]{default} Guest-' . $tag . '{default}';
+        $persona = [
+            'name' => 'Guest-' . $tag,
+            'color' => '{default}',
             'display' => $display,
         ];
     }
@@ -242,34 +302,6 @@ function wt_chat_revision(PDO $pdo): string {
     $total = (int)($row['total'] ?? 0);
     $latest = (int)($row['latest'] ?? 0);
     return $total . ':' . $latest;
-}
-
-function wt_chat_cache_key(): string {
-    return 'all';
-}
-
-function wt_chat_cache_load(string $revision): ?array {
-    $cached = wt_fragment_load('chat', wt_chat_cache_key(), $revision);
-    if (!$cached) {
-        return null;
-    }
-    $messages = $cached['messages'] ?? null;
-    if (!is_array($messages)) {
-        return null;
-    }
-    return [
-        'messages' => $messages,
-        'latest_id' => (int)($cached['latest_id'] ?? 0),
-    ];
-}
-
-function wt_chat_cache_save(string $revision, array $messages, int $latestId): void {
-    wt_fragment_save('chat', wt_chat_cache_key(), $revision, [
-        'html' => '',
-        'messages' => $messages,
-        'latest_id' => $latestId,
-        'count' => count($messages),
-    ]);
 }
 
 // POST: enqueue chat to DB outbox (rate-limited per IP)
@@ -307,10 +339,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $personaname = $persona['display'];
         }
 
+        if (!$steamId && strncmp($message, '/', 1) === 0) {
+            $command = trim(substr($message, 1));
+            $match = wt_chat_find_persona_option($command);
+            if ($match !== null) {
+                $display = '{gold}[Web]{default} ' . $match['color'] . $match['name'];
+                if (substr($display, -9) !== '{default}') {
+                    $display .= '{default}';
+                }
+                $persona = [
+                    'name' => $match['name'],
+                    'color' => $match['color'],
+                    'display' => $display,
+                ];
+                $_SESSION['wt_chat_persona'] = $persona;
+                wt_chat_json(['ok' => true, 'persona' => $persona, 'message' => 'persona-updated']);
+            }
+
+            // Debug: return full persona list when not found
+            wt_chat_json([
+                'ok' => true,
+                'message' => 'persona-not-found',
+                'options' => wt_chat_webnames(),
+            ]);
+        }
+
         $pdo->beginTransaction();
         [$serverIp, $serverPort] = wt_chat_server_identity();
 
-        $stmt = $pdo->prepare('INSERT INTO whaletracker_chat (created_at, steamid, personaname, iphash, message, server_ip, server_port) VALUES (:ts, :steamid, :personaname, :iphash, :msg, :server_ip, :server_port)');
+        $stmt = $pdo->prepare('INSERT INTO whaletracker_chat (created_at, steamid, personaname, iphash, message, server_ip, server_port, alert) VALUES (:ts, :steamid, :personaname, :iphash, :msg, :server_ip, :server_port, :alert)');
         $displayName = $personaname;
         if ($steamId && $personaname) {
             $displayName = $personaname . " | Web";
@@ -325,6 +382,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':msg' => $message,
             ':server_ip' => $serverIp,
             ':server_port' => $serverPort,
+            ':alert' => 1,
         ]);
         $outboxName = $displayName ?: 'Web Player';
         $stmt2 = $pdo->prepare('INSERT INTO whaletracker_chat_outbox (created_at, iphash, display_name, message, server_ip, server_port) VALUES (:ts, :iphash, :name, :msg, :server_ip, :server_port)');
@@ -349,19 +407,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// GET: return recent chat
+// GET: return paginated chat
 try {
     $pdo = wt_pdo();
     wt_chat_db_init($pdo);
-    $revision = wt_chat_revision($pdo);
-    $cached = wt_chat_cache_load($revision);
-    if ($cached) {
-        $messages = $cached['messages'];
-    } else {
-        [$messages, $latestId] = wt_chat_fetch($pdo);
-        wt_chat_cache_save($revision, $messages, $latestId);
+    $limitParam = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
+    $limit = max(1, min($limitParam, 200));
+    $beforeId = isset($_GET['before']) ? (int)$_GET['before'] : null;
+    $afterId = isset($_GET['after']) ? (int)$_GET['after'] : null;
+    if ($afterId !== null && $afterId <= 0) {
+        $afterId = null;
     }
-    wt_chat_json(['ok' => true, 'messages' => $messages, 'revision' => $revision]);
+    if ($beforeId !== null && $beforeId <= 0) {
+        $beforeId = null;
+    }
+    if ($afterId !== null) {
+        $beforeId = null;
+    }
+    $alertsOnly = isset($_GET['alerts_only']) && (int)$_GET['alerts_only'] === 1;
+    [$messages, $meta] = wt_chat_fetch($pdo, $limit, $beforeId, $afterId, $alertsOnly);
+    wt_chat_json([
+        'ok' => true,
+        'messages' => $messages,
+        'oldest_id' => $meta['oldest_id'] ?? null,
+        'newest_id' => $meta['newest_id'] ?? null,
+        'latest_id' => $meta['latest_id'] ?? null,
+        'has_more_older' => $meta['has_more_older'] ?? false,
+    ]);
 } catch (Throwable $e) {
     wt_chat_log('GET failure: ' . $e->getMessage());
     wt_chat_json(['ok' => false, 'error' => 'server'], 500);

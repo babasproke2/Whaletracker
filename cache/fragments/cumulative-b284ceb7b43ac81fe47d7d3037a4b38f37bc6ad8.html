@@ -1,0 +1,48 @@
+<div class="table-toolbar">
+    <form class="search-bar toolbar-search" method="get" action="/stats/index.php">
+        <input type="text" name="q" value="Tiftid" placeholder="Search players by Steam name or SteamID">
+        <button type="submit">Search</button>
+    </form>
+    <div class="toolbar-spacer"></div>
+    <div class="toolbar-pagination">
+                    <span class="table-pagination-info">Page 1 / 1</span>
+            <div class="table-pagination-controls">
+                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                            </div>
+            </div>
+</div>
+
+<div class="table-wrapper">
+    <table class="stats-table" id="stats-table-cumulative">
+        <thead>
+        <tr>
+            <th data-key="player" data-type="text" title="Player">Player</th>
+            <th data-key="kills" data-type="number" title="Kills | Deaths | Assists">Kills|Deaths|Assists</th>
+            <th data-key="kd" data-type="number" title="Kill/Death Ratio">K/D</th>
+            <th data-key="damage" data-type="number" title="Damage Dealt">Dmg</th>
+            <th data-key="damage_taken" data-type="number" title="Damage Taken">DT</th>
+            <th data-key="dpm" data-type="number" title="Damage Per Minute">D/M</th>
+            <th data-key="dtpm" data-type="number" title="Damage Taken Per Minute">DT/M</th>
+            <th data-key="accuracy" data-type="number" title="Accuracy">Acc.</th>
+            <th data-key="airshots" data-type="number" title="Airshots">AS</th>
+            <th data-key="drops" data-type="number" title="Dropped Medics | Times Dropped">Dp | Dp'd</th>
+            <th data-key="healing" data-type="number" title="Healing Done">Heals</th>
+            <th data-key="headshots" data-type="number" title="Headshots">Headshots</th>
+            <th data-key="backstabs" data-type="number" title="Backstabs">Stabs</th>
+            <th data-key="streak" data-type="number" title="Best Killstreak">Best Streak</th>
+            <th data-key="playtime" data-type="number" title="Playtime">Time</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr data-player="tiftid" data-kills="70" data-assists="25" data-deaths="143" data-damage="17718" data-damage_taken="131587" data-dpm="116.8605" data-dtpm="867.8927" data-accuracy="28.1065" data-accuracy_class="0" data-airshots="0" data-drops="0" data-dropped="0" data-kd="0.4895" data-healing="5512" data-headshots="0" data-backstabs="42" data-streak="3" data-playtime="9097" data-score="95" data-online="0"><td class="player-cell"><img class="player-avatar" src="/stats/cache/76561198272462792-avatar.jpg" alt="" onerror="this.onerror=null;this.src='/stats/assets/whaley-avatar.jpg'"><div><a title="Player" href="https://steamcommunity.com/id/tiftid/" target="_blank" rel="noopener">Tiftid</a></div></td><td>70|143|25</td><td>0.49</td><td>17,718</td><td>131,587</td><td>116.9</td><td>867.9</td><td class="stat-accuracy-cell" title="Overall: 28.1% (95/338)"><span class="stat-accuracy-value">28.1%</span></td><td>0</td><td>0 | 0</td><td>5,512</td><td>0</td><td>42</td><td>3</td><td>2h 31m</td></tr>        </tbody>
+    </table>
+</div>
+
+    <div class="table-pagination table-pagination--bottom">
+        <span class="table-pagination-info">Page 1 / 1</span>
+        <div class="table-pagination-controls">
+                            <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                        <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                    </div>
+    </div>

@@ -1,7 +1,9 @@
 <div class="tab-content active" id="tab-online">
+    <div class="online-overview" id="online-overview">
+        <div class="info-card-grid" id="online-map-cards"></div>
+    </div>
     <div class="table-wrapper">
-        <div class="empty-state" id="online-empty">Map changing or no players are currently online.</div>
-        <table class="stats-table" id="stats-table-online" style="display:none">
+        <table class="stats-table" id="stats-table-online">
             <thead>
             <tr>
                 <th data-key="player" data-type="text">Player</th>
@@ -22,5 +24,6 @@
             </thead>
             <tbody></tbody>
         </table>
+        <div class="empty-state" id="online-empty">Map changing or no players are currently online.</div>
     </div>
 </div>

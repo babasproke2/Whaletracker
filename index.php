@@ -136,7 +136,7 @@ function initTabNavigationCancel() {
 
 async function loadCumulativePage(targetUrl) {
     const container = document.getElementById('cumulative-fragment');
-    if (!container || cumulativeLoading || !targetUrl) {
+    if (!container || !targetUrl) {
         return;
     }
     cancelCumulativeRequest();
