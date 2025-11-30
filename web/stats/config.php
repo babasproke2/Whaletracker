@@ -33,6 +33,13 @@ define('WT_LOGS_PAGE_SIZE', (int)(getenv('WT_LOGS_PAGE_SIZE') ?: 25));
 define('WT_LOGS_MAX_PAGES', (int)(getenv('WT_LOGS_MAX_PAGES') ?: 2));
 define('WT_LOGS_HISTORY_LIMIT', (int)(getenv('WT_LOGS_HISTORY_LIMIT') ?: 50));
 define('WT_STATS_MIN_PLAYTIME_SORT', (int)(getenv('WT_STATS_MIN_PLAYTIME_SORT') ?: (4 * 3600)));
+$autoRefreshEnv = getenv('WT_LOGS_AUTO_REFRESH');
+$autoRefresh = false;
+if ($autoRefreshEnv !== false && $autoRefreshEnv !== '') {
+    $autoRefresh = in_array(strtolower($autoRefreshEnv), ['1', 'true', 'yes', 'on'], true);
+}
+define('WT_LOGS_AUTO_REFRESH', $autoRefresh);
+define('WT_LOGS_REFRESH_INTERVAL', (int)(getenv('WT_LOGS_REFRESH_INTERVAL') ?: 120));
 
 // Base URL for TF2 class icons used across the UI
 define('WT_CLASS_ICON_BASE', getenv('WT_CLASS_ICON_BASE') ?: '/leaderboard/');

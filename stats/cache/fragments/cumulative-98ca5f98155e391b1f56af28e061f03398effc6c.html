@@ -1,0 +1,48 @@
+<div class="table-toolbar">
+    <form class="search-bar toolbar-search" method="get" action="/stats/index.php">
+        <input type="text" name="q" value="nekurix" placeholder="Search players by Steam name or SteamID">
+        <button type="submit">Search</button>
+    </form>
+    <div class="toolbar-spacer"></div>
+    <div class="toolbar-pagination">
+                    <span class="table-pagination-info">Page 1 / 1</span>
+            <div class="table-pagination-controls">
+                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                                    <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                            </div>
+            </div>
+</div>
+
+<div class="table-wrapper">
+    <table class="stats-table" id="stats-table-cumulative">
+        <thead>
+        <tr>
+            <th data-key="player" data-type="text" title="Player">Player</th>
+            <th data-key="kills" data-type="number" title="Kills | Deaths | Assists">Kills|Deaths|Assists</th>
+            <th data-key="kd" data-type="number" title="Kill/Death Ratio">K/D</th>
+            <th data-key="damage" data-type="number" title="Damage Dealt">Dmg</th>
+            <th data-key="damage_taken" data-type="number" title="Damage Taken">DT</th>
+            <th data-key="dpm" data-type="number" title="Damage Per Minute">D/M</th>
+            <th data-key="dtpm" data-type="number" title="Damage Taken Per Minute">DT/M</th>
+            <th data-key="accuracy" data-type="number" title="Accuracy">Acc.</th>
+            <th data-key="airshots" data-type="number" title="Airshots">AS</th>
+            <th data-key="drops" data-type="number" title="Dropped Medics | Times Dropped">Dp | Dp'd</th>
+            <th data-key="healing" data-type="number" title="Healing Done">Heals</th>
+            <th data-key="headshots" data-type="number" title="Headshots">Headshots</th>
+            <th data-key="backstabs" data-type="number" title="Backstabs">Stabs</th>
+            <th data-key="streak" data-type="number" title="Best Killstreak">Best Streak</th>
+            <th data-key="playtime" data-type="number" title="Playtime">Time</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr class="player-highlight" data-player="nekurix" data-kills="84" data-assists="6" data-deaths="70" data-damage="4333" data-damage_taken="1957" data-dpm="422.7317" data-dtpm="190.9268" data-accuracy="60.7504" data-accuracy_class="0" data-airshots="24" data-drops="0" data-dropped="0" data-kd="1.2000" data-healing="0" data-headshots="0" data-backstabs="0" data-streak="6" data-playtime="615" data-score="90" data-online="0"><td class="player-cell"><img class="player-avatar" src="/stats/cache/76561198057147491-avatar.jpg" alt="" onerror="this.onerror=null;this.src='/stats/assets/whaley-avatar.jpg'"><div><a title="Player" href="https://steamcommunity.com/id/Nekurix/" target="_blank" rel="noopener">Nekurix</a></div></td><td>84|70|6</td><td>1.20</td><td>4,333</td><td>1,957</td><td>422.7</td><td>190.9</td><td class="stat-accuracy-cell" title="Overall: 60.8% (421/693) • Shotgun: 6 shots / 6 hits; Scattergun: 0 shots / 0 hits; Pistol: 0 shots / 0 hits; Rocket Launcher: 109 shots / 66 hits; Grenade Launcher: 0 shots / 0 hits; Sticky Launcher: 0 shots / 0 hits; Sniper Rifle: 0 shots / 0 hits; Revolver: 0 shots / 0 hits"><span class="stat-accuracy-value">100.0%</span></td><td>24</td><td>0 | 0</td><td>0</td><td>0</td><td>0</td><td>6</td><td>10m</td></tr>        </tbody>
+    </table>
+</div>
+
+    <div class="table-pagination table-pagination--bottom">
+        <span class="table-pagination-info">Page 1 / 1</span>
+        <div class="table-pagination-controls">
+                            <span class="table-pagination-button is-disabled" aria-disabled="true">Prev</span>
+                                        <span class="table-pagination-button is-disabled" aria-disabled="true">Next</span>
+                    </div>
+    </div>

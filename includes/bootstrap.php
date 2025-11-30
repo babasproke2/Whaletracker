@@ -1,5 +1,6 @@
 <?php
 ini_set('session.gc_maxlifetime', 86400);
+ini_set("default_socket_timeout", 2);
 session_set_cookie_params([
     'lifetime' => 86400,
     'path' => '/',

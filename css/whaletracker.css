@@ -798,6 +798,16 @@ body {
     flex: 0 0 70%;
 }
 
+.toolbar-search__rate-notice {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-muted, #7a7a7a);
+}
+
+.toolbar-search.is-rate-limited .toolbar-search__rate-notice {
+    color: #c0392b;
+}
+
 .toolbar-spacer {
     flex: 0 0 10%;
 }

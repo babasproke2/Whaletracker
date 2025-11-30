@@ -79,6 +79,67 @@ function initSorting() {
     document.querySelectorAll('.stats-table').forEach(table => attachSortingToTable(table));
 }
 
+function attachSearchRateLimit(form) {
+    if (!form || form.dataset.rateLimitBound === '1') {
+        return;
+    }
+    const limitMs = Number(form.dataset.rateLimitMs) || 1500;
+    const notice = form.querySelector('.toolbar-search__rate-notice');
+    let lastSubmit = 0;
+    let hideNoticeTimeout = null;
+
+    const clearNotice = () => {
+        if (notice) {
+            notice.hidden = true;
+            notice.textContent = '';
+        }
+        form.classList.remove('is-rate-limited');
+        if (hideNoticeTimeout) {
+            clearTimeout(hideNoticeTimeout);
+            hideNoticeTimeout = null;
+        }
+    };
+
+    form.addEventListener('submit', event => {
+        const now = Date.now();
+        if (lastSubmit && (now - lastSubmit) < limitMs) {
+            event.preventDefault();
+            const remainingMs = limitMs - (now - lastSubmit);
+            const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+            if (notice) {
+                notice.textContent = `Please wait ${seconds}s before searching again.`;
+                notice.hidden = false;
+            }
+            form.classList.add('is-rate-limited');
+            if (hideNoticeTimeout) {
+                clearTimeout(hideNoticeTimeout);
+            }
+            hideNoticeTimeout = setTimeout(() => {
+                form.classList.remove('is-rate-limited');
+                if (notice) {
+                    notice.hidden = true;
+                    notice.textContent = '';
+                }
+                hideNoticeTimeout = null;
+            }, Math.max(limitMs, 1500));
+            return;
+        }
+        lastSubmit = now;
+        clearNotice();
+    });
+
+    form.addEventListener('input', () => {
+        clearNotice();
+    });
+
+    form.dataset.rateLimitBound = '1';
+}
+
+function initSearchRateLimit(scope = document) {
+    const context = scope && typeof scope.querySelectorAll === 'function' ? scope : document;
+    context.querySelectorAll('form.toolbar-search[data-rate-limit-ms]').forEach(form => attachSearchRateLimit(form));
+}
+
 let cumulativeLoading = false;
 let cumulativeAbortController = null;
 
@@ -174,6 +235,7 @@ async function loadCumulativePage(targetUrl) {
             throw new Error('Invalid fragment payload');
         }
         container.innerHTML = payload.html || '';
+        initSearchRateLimit(container);
         if (typeof payload.page !== 'undefined') {
             container.dataset.page = String(payload.page);
         }
@@ -205,6 +267,7 @@ async function loadCumulativePage(targetUrl) {
 
 document.addEventListener('DOMContentLoaded', () => {
     initSorting();
+    initSearchRateLimit();
     initCumulativeFragment();
     initTabNavigationCancel();
 });

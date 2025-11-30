@@ -60,6 +60,34 @@ function wt_weapon_category_metadata(): array
     return WT_WEAPON_CATEGORY_METADATA;
 }
 
+function wt_total_weapon_accuracy_counts(array $row): array
+{
+    static $weaponAccuracyPairs = [
+        ['shots_shotguns', 'hits_shotguns'],
+        ['shots_scatterguns', 'hits_scatterguns'],
+        ['shots_pistols', 'hits_pistols'],
+        ['shots_rocketlaunchers', 'hits_rocketlaunchers'],
+        ['shots_grenadelaunchers', 'hits_grenadelaunchers'],
+        ['shots_stickylaunchers', 'hits_stickylaunchers'],
+        ['shots_snipers', 'hits_snipers'],
+        ['shots_revolvers', 'hits_revolvers'],
+    ];
+
+    $totalShots = 0;
+    $totalHits = 0;
+    foreach ($weaponAccuracyPairs as [$shotsKey, $hitsKey]) {
+        $totalShots += (int)($row[$shotsKey] ?? 0);
+        $totalHits += (int)($row[$hitsKey] ?? 0);
+    }
+
+    if ($totalShots === 0 && isset($row['shots'], $row['hits'])) {
+        $totalShots = (int)$row['shots'];
+        $totalHits = (int)$row['hits'];
+    }
+
+    return [$totalShots, $totalHits];
+}
+
 function wt_build_weapon_category_summary_from_row(array &$row, bool $fallbackOverall = true): array
 {
     $summary = [];
@@ -94,8 +122,7 @@ function wt_build_weapon_category_summary_from_row(array &$row, bool $fallbackOv
     });
 
     if (empty($summary) && $fallbackOverall) {
-        $totalShots = (int)($row['shots'] ?? 0);
-        $totalHits = (int)($row['hits'] ?? 0);
+        [$totalShots, $totalHits] = wt_total_weapon_accuracy_counts($row);
         if ($totalShots > 0) {
             $summary[] = [
                 'slug' => 'overall',
@@ -193,7 +220,7 @@ function wt_stats_min_playtime_sort(): int
 function wt_stats_order_clause(): string
 {
     $threshold = wt_stats_min_playtime_sort();
-    $ratioExpr = 'COALESCE((kills + assists) / NULLIF(deaths, 0), (kills + assists))';
+    $ratioExpr = 'COALESCE((kills + (0.5 * assists)) / NULLIF(deaths, 0), (kills + (0.5 * assists)))';
     return sprintf(
         'CASE WHEN playtime >= %d THEN %s ELSE -1 END DESC, (kills + assists) DESC, kills DESC',
         $threshold,
@@ -915,6 +942,105 @@ function wt_refresh_current_log(): void
     ]);
 }
 
+function wt_logs_manual_refresh_requested(): bool
+{
+    static $requested = null;
+    if ($requested !== null) {
+        return $requested;
+    }
+    $keys = ['refresh_logs', 'refresh_current_log', 'refresh'];
+    foreach ($keys as $key) {
+        if (!empty($_GET[$key])) {
+            $requested = true;
+            return true;
+        }
+    }
+    $requested = false;
+    return false;
+}
+
+function wt_logs_auto_refresh_enabled(): bool
+{
+    static $enabled = null;
+    if ($enabled !== null) {
+        return $enabled;
+    }
+    $enabled = defined('WT_LOGS_AUTO_REFRESH') ? (bool)WT_LOGS_AUTO_REFRESH : false;
+    return $enabled;
+}
+
+function wt_logs_refresh_interval(): int
+{
+    static $interval = null;
+    if ($interval !== null) {
+        return $interval;
+    }
+    $interval = defined('WT_LOGS_REFRESH_INTERVAL') ? (int)WT_LOGS_REFRESH_INTERVAL : 120;
+    if ($interval < 0) {
+        $interval = 0;
+    }
+    return $interval;
+}
+
+function wt_logs_refresh_marker_file(): string
+{
+    return wt_cache_dir() . '/logs_refresh.marker';
+}
+
+function wt_get_logs_refresh_marker(): int
+{
+    $cacheKey = 'wt:logs:last_refresh';
+    $cached = wt_cache_get($cacheKey);
+    if (is_numeric($cached)) {
+        return (int)$cached;
+    }
+    $path = wt_logs_refresh_marker_file();
+    if (is_file($path)) {
+        $value = (int)trim((string)file_get_contents($path));
+        if ($value > 0) {
+            return $value;
+        }
+    }
+    return 0;
+}
+
+function wt_set_logs_refresh_marker(int $timestamp, ?int $ttl = null): void
+{
+    $ttl = $ttl ?? wt_logs_refresh_interval();
+    if ($ttl <= 0) {
+        $ttl = 1;
+    }
+    $cacheKey = 'wt:logs:last_refresh';
+    wt_cache_set($cacheKey, $timestamp, $ttl);
+    $path = wt_logs_refresh_marker_file();
+    @file_put_contents($path, (string)$timestamp);
+}
+
+function wt_maybe_refresh_current_log(): void
+{
+    if (wt_logs_manual_refresh_requested()) {
+        wt_refresh_current_log();
+        wt_set_logs_refresh_marker(time());
+        return;
+    }
+    if (!wt_logs_auto_refresh_enabled()) {
+        return;
+    }
+    $interval = wt_logs_refresh_interval();
+    if ($interval === 0) {
+        wt_refresh_current_log();
+        wt_set_logs_refresh_marker(time(), 1);
+        return;
+    }
+    $last = wt_get_logs_refresh_marker();
+    $now = time();
+    if ($last > 0 && ($now - $last) < $interval) {
+        return;
+    }
+    wt_refresh_current_log();
+    wt_set_logs_refresh_marker($now, $interval);
+}
+
 function wt_fetch_logs(int $limit = 15, string $scope = 'regular', int $page = 1): array
 {
     $limit = max(1, min($limit, 1000));
@@ -926,7 +1052,7 @@ function wt_fetch_logs(int $limit = 15, string $scope = 'regular', int $page = 1
     $minPlayers = $bounds['min'] ?? null;
     $maxPlayers = $bounds['max'] ?? null;
 
-    wt_refresh_current_log();
+    wt_maybe_refresh_current_log();
 
     // Fetch slightly more to handle potential filtering (though we filter by player_count in SQL now mostly)
     // But since we are paginating, we should trust the SQL limit/offset more.
@@ -1378,7 +1504,8 @@ function wt_fetch_profiles_from_api(array $steamIds): array
             implode(',', $chunk)
         );
 
-        $response = @file_get_contents($url);
+        $context = stream_context_create(["http" => ["timeout" => 2.0]]);
+        $response = @file_get_contents($url, false, $context);
         if ($response === false) {
             continue;
         }
@@ -1601,7 +1728,7 @@ function wt_avatar_cache_download(string $steamId, string $remoteUrl, ?string $e
         return $basename;
     }
 
-    $context = stream_context_create(['http' => ['timeout' => 5]]);
+    $context = stream_context_create(['http' => ['timeout' => 2]]);
     $data = @file_get_contents($remoteUrl, false, $context);
     if ($data === false) {
         if ($existingBasename && wt_avatar_cache_is_fresh($existingBasename)) {
@@ -1695,8 +1822,7 @@ function wt_stats_with_profiles(array $stats, array $profiles): array
         $stat['damage_taken'] = isset($stat['damage_taken']) ? (int)$stat['damage_taken'] : 0;
         $stat['last_seen'] = isset($stat['last_seen']) ? (int)$stat['last_seen'] : 0;
         $stat['favorite_class'] = isset($stat['favorite_class']) ? (int)$stat['favorite_class'] : 0;
-        $totalShots = isset($stat['shots']) ? (int)$stat['shots'] : 0;
-        $totalHits = isset($stat['hits']) ? (int)$stat['hits'] : 0;
+        [$totalShots, $totalHits] = wt_total_weapon_accuracy_counts($stat);
         $overallAccuracy = $totalShots > 0 ? ($totalHits / $totalShots) * 100.0 : 0.0;
         $stat['accuracy_overall'] = $overallAccuracy;
         $stat['accuracy'] = $overallAccuracy;
@@ -1828,6 +1954,25 @@ function wt_current_user_id(): ?string
 
 function wt_fetch_summary_stats(): array
 {
+    $cacheKey = 'wt:summary:totals';
+    $lockKey = 'wt:lock:summary';
+    $cached = wt_cache_get($cacheKey);
+    
+    // Soft Expiry Logic
+    if (is_array($cached)) {
+        $expiresAt = $cached['_expires_at'] ?? 0;
+        if (time() < $expiresAt) {
+            return $cached;
+        }
+        
+        // Data is stale, try to acquire lock to update
+        $redis = wt_cache_client();
+        if (!$redis || !$redis->set($lockKey, '1', ['nx', 'ex' => 10])) {
+            // Could not acquire lock (someone else is updating), return stale data
+            return $cached;
+        }
+    }
+
     $pdo = wt_pdo();
     $sql = sprintf(
         'SELECT COUNT(*) AS total_players,
@@ -1883,10 +2028,15 @@ function wt_fetch_summary_stats(): array
             $summary['topKillstreakOwner'] = $enriched[0] ?? null;
         }
     }
+    
+    // Set soft expiry to 5 minutes from now
+    $summary['_expires_at'] = time() + 300;
+    
+    // Store in Redis with 6 minutes TTL (1 minute grace period)
+    wt_cache_set($cacheKey, $summary, 360);
 
     return $summary;
 }
-
 // This function fetches paginated player stats with two modes:
 // With search: Loads ALL players, enriches with Steam profiles, 
 // sorts/filters them in memory, then paginates the results (less efficient for large datasets).
@@ -1974,6 +2124,140 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
         'rows' => $rows,
         'total' => $total,
     ];
+}
+
+function wt_download_cumulative_page_avatars(
+    int $page = 1,
+    int $perPage = 50,
+    int $delaySeconds = 15,
+    ?callable $logger = null,
+    ?array $steamIds = null
+): array {
+    if (WT_STEAM_API_KEY === '') {
+        throw new RuntimeException('WT_STEAM_API_KEY is not configured.');
+    }
+
+    $page = max(1, $page);
+    $perPage = max(1, $perPage);
+    $delaySeconds = max(0, $delaySeconds);
+
+    $steamIdMap = [];
+    $invalidSteamIds = [];
+
+    if ($steamIds !== null && !empty($steamIds)) {
+        $validIds = [];
+        foreach ($steamIds as $rawSteamId) {
+            $normalized = wt_normalize_steam_id((string)$rawSteamId);
+            if ($normalized === null) {
+                $invalidSteamIds[] = (string)$rawSteamId;
+                continue;
+            }
+            $validIds[$normalized] = null;
+        }
+
+        if (empty($validIds)) {
+            return [];
+        }
+
+        $pdo = wt_pdo();
+        $placeholders = implode(',', array_fill(0, count($validIds), '?'));
+        $sql = sprintf(
+            'SELECT steamid, COALESCE(cached_personaname, steamid) AS personaname FROM %s WHERE steamid IN (%s)',
+            WT_DB_TABLE,
+            $placeholders
+        );
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute(array_keys($validIds));
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $steamId = (string)($row['steamid'] ?? '');
+            if ($steamId === '') {
+                continue;
+            }
+            $steamIdMap[$steamId] = (string)($row['personaname'] ?? $steamId);
+            unset($validIds[$steamId]);
+        }
+        foreach ($validIds as $steamId => $_) {
+            $steamIdMap[$steamId] = $steamId;
+        }
+    } else {
+        $offset = ($page - 1) * $perPage;
+        $pdo = wt_pdo();
+        $sql = sprintf(
+            'SELECT steamid, cached_personaname AS personaname FROM %s ORDER BY %s LIMIT :limit OFFSET :offset',
+            WT_DB_TABLE,
+            wt_stats_order_clause()
+        );
+        $stmt = $pdo->prepare($sql);
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            return [];
+        }
+
+        foreach ($rows as $row) {
+            $steamId = (string)($row['steamid'] ?? '');
+            if ($steamId === '') {
+                continue;
+            }
+            $normalized = wt_normalize_steam_id($steamId);
+            if ($normalized === null) {
+                continue;
+            }
+            $label = trim((string)($row['personaname'] ?? ''));
+            if ($label === '') {
+                $label = $steamId;
+            }
+            $steamIdMap[$normalized] = $label;
+        }
+    }
+
+    $processed = [];
+    $validSteamIds = array_keys($steamIdMap);
+    if (empty($validSteamIds) && empty($invalidSteamIds)) {
+        return [];
+    }
+
+    $validTotal = count($validSteamIds);
+    $total = $validTotal + count($invalidSteamIds);
+    $currentIndex = 0;
+
+    foreach ($validSteamIds as $i => $steamId) {
+        $profiles = wt_fetch_profiles_from_api([$steamId]);
+        $profile = $profiles[$steamId] ?? null;
+        $entry = [
+            'steamid' => $steamId,
+            'personaname' => $steamIdMap[$steamId],
+            'success' => $profile !== null,
+            'avatar_cached' => $profile['avatar_cached'] ?? null,
+        ];
+        $processed[] = $entry;
+        if ($logger) {
+            $logger($entry, $currentIndex, $total);
+        }
+        $currentIndex++;
+        if ($delaySeconds > 0 && $i < $validTotal - 1) {
+            sleep($delaySeconds);
+        }
+    }
+
+    foreach ($invalidSteamIds as $rawSteamId) {
+        $entry = [
+            'steamid' => $rawSteamId,
+            'personaname' => $rawSteamId,
+            'success' => false,
+            'error' => 'invalid_steamid',
+        ];
+        $processed[] = $entry;
+        if ($logger) {
+            $logger($entry, $currentIndex, $total);
+        }
+        $currentIndex++;
+    }
+
+    return $processed;
 }
 
 // This function fetches a player's database record by their Steam ID and enriches it with profile data from Steam's API. 
@@ -2393,15 +2677,23 @@ function wt_fragment_save(string $type, string $key, string $revision, array $pa
 
 function wt_cumulative_revision(): string
 {
+    $cacheKey = "wt:revision:cumulative";
+    $cached = wt_cache_get($cacheKey);
+    if ($cached !== null) {
+        return (string)$cached;
+    }
+
     $pdo = wt_pdo();
     $stmt = $pdo->query(
-        'SELECT MAX(last_seen) AS recent, COUNT(*) AS total, SUM(damage_dealt) AS total_damage FROM ' . WT_DB_TABLE
+        "SELECT MAX(last_seen) AS recent, COUNT(*) AS total FROM " . WT_DB_TABLE
     );
     $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
-    $recent = (int)($row['recent'] ?? 0);
-    $total = (int)($row['total'] ?? 0);
-    $damage = (int)($row['total_damage'] ?? 0);
-    return $recent . ':' . $total . ':' . $damage;
+    $recent = (int)($row["recent"] ?? 0);
+    $total = (int)($row["total"] ?? 0);
+    
+    $revision = $recent . ":" . $total;
+    wt_cache_set($cacheKey, $revision, 60);
+    return $revision;
 }
 
 function wt_logs_revision(): string
@@ -2413,7 +2705,6 @@ function wt_logs_revision(): string
     $total = (int)($row['total'] ?? 0);
     return $recent . ':' . $total;
 }
-
 function wt_render_cumulative_fragment(array $context): string
 {
     extract($context);
@@ -2617,6 +2908,10 @@ function wt_build_summary_context(array $summary): array
     if (!in_array($playersWeekTrend, ['up', 'down', 'flat'], true)) {
         $playersWeekTrend = 'flat';
     }
+    if ($playersWeekChangePercentRaw !== null && $playersWeekChangePercentRaw < 0) {
+        $playersWeekChangePercentRaw = 0.0;
+        $playersWeekTrend = 'up';
+    }
     $playersWeekTrendClass = 'stat-card-trend stat-card-trend--' . $playersWeekTrend;
     if ($playersWeekChangePercentRaw !== null) {
         $playersWeekChangeLabel = sprintf('%+.1f%%', $playersWeekChangePercentRaw);
@@ -2722,8 +3017,7 @@ function wt_render_cumulative_rows(array $rows, ?string $focusedSteamId, string 
         $airshots = (int)($row['airshots'] ?? 0);
         $drops = (int)($row['medic_drops'] ?? 0);
         $dropped = (int)($row['uber_drops'] ?? $drops);
-        $totalShots = isset($row['shots']) ? (int)$row['shots'] : 0;
-        $totalHits = isset($row['hits']) ? (int)$row['hits'] : 0;
+        [$totalShots, $totalHits] = wt_total_weapon_accuracy_counts($row);
         $minutesPlayed = $playtimeSeconds > 0 ? ($playtimeSeconds / 60.0) : 0.0;
         $dpm = $minutesPlayed > 0 ? $totalDamage / $minutesPlayed : 0.0;
         $dtpm = $minutesPlayed > 0 ? $damageTaken / $minutesPlayed : 0.0;
