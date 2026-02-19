@@ -37,7 +37,7 @@ $tabRoutes = [
             <img src="/stats/assets/whaletracker_logo.png" style="width:50%" alt="WhaleTracker logo">
         </div>
         <div class="animation">
-            <img src="/stats/wholesome2.gif" alt="Wholesome">
+            <img src="/stats/assets/wholesome2.gif" alt="Wholesome">
         </div>
         <div class="header-actions">
             <?php if (WT_STEAM_API_KEY === ''): ?>

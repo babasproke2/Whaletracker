@@ -61,7 +61,7 @@
 <div class="current-wrapper">
     <div class="current-brand">
         <img src="/stats/assets/whaletracker_logo.png" alt="WhaleTracker logo">
-        <img src="/stats/wholesome2.gif" alt="Wholesome">
+        <img src="/stats/assets/wholesome2.gif" alt="Wholesome">
     </div>
     <div class="current-controls">
         <button id="refresh-current-log">Refresh Logs</button>
