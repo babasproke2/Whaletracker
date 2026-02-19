@@ -97,7 +97,7 @@ let bottomArrow = null;
 if (chatPanel) {
     topArrow = document.createElement('div');
     topArrow.classList.add('navarrow', 'navarrow-top');
-    topArrow.innerHTML = '<img src="/stats/reisen_up.png" alt="Scroll to top">';
+    topArrow.innerHTML = '<img src="/stats/assets/reisen_up.png" alt="Scroll to top">';
     topArrow.addEventListener('click', () => {
         const box = document.getElementById('chat-messages');
         if (box) {
@@ -109,7 +109,7 @@ if (chatPanel) {
     lockArrow = document.createElement('div');
     lockArrow.classList.add('navarrow', 'navarrow-lock');
     lockArrow.title = 'Lock chat to bottom';
-    lockArrow.innerHTML = '<img src="/stats/keine_lock.png" alt="Lock chat to bottom">';
+    lockArrow.innerHTML = '<img src="/stats/assets/keine_lock.png" alt="Lock chat to bottom">';
     lockArrow.classList.toggle('is-active', chatAutoScrollEnabled);
     lockArrow.addEventListener('click', () => {
         chatAutoScrollEnabled = !chatAutoScrollEnabled;
@@ -121,7 +121,7 @@ if (chatPanel) {
 
     bottomArrow = document.createElement('div');
     bottomArrow.classList.add('navarrow', 'navarrow-bottom');
-    bottomArrow.innerHTML = '<img src="/stats/tewi_down.png" alt="Scroll to bottom">';
+    bottomArrow.innerHTML = '<img src="/stats/assets/tewi_down.png" alt="Scroll to bottom">';
     bottomArrow.addEventListener('click', () => {
         const box = document.getElementById('chat-messages');
         if (box) box.scrollTop = box.scrollHeight;

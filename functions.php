@@ -2596,17 +2596,17 @@ function wt_gamemode_icon_path(?string $gamemode): ?string
     }
     $slug = wt_slugify($gamemode);
     $map = [
-        'king-of-the-hill' => '/stats/koth.png',
-        'koth' => '/stats/koth.png',
-        'payload' => '/stats/payload.png',
-        'payload-race' => '/stats/payload.png',
-        'payload-push' => '/stats/payload.png',
-        'capture-the-flag' => '/stats/ctf.png',
-        'ctf' => '/stats/ctf.png',
-        'attack-defend-cp' => '/stats/cp.png',
-        'control-point' => '/stats/cp.png',
-        'cp' => '/stats/cp.png',
-        '5cp' => '/stats/5cp.png',
+        'king-of-the-hill' => '/stats/assets/koth.png',
+        'koth' => '/stats/assets/koth.png',
+        'payload' => '/stats/assets/payload.png',
+        'payload-race' => '/stats/assets/payload.png',
+        'payload-push' => '/stats/assets/payload.png',
+        'capture-the-flag' => '/stats/assets/ctf.png',
+        'ctf' => '/stats/assets/ctf.png',
+        'attack-defend-cp' => '/stats/assets/cp.png',
+        'control-point' => '/stats/assets/cp.png',
+        'cp' => '/stats/assets/cp.png',
+        '5cp' => '/stats/assets/5cp.png',
     ];
     return $map[$slug] ?? null;
 }

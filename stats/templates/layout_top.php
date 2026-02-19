@@ -34,7 +34,7 @@ $tabRoutes = [
 <div class="page">
     <header class="header">
         <div class="brand">
-            <img src="/stats/whaletracker_logo.png" style="width:50%" alt="WhaleTracker logo">
+            <img src="/stats/assets/whaletracker_logo.png" style="width:50%" alt="WhaleTracker logo">
         </div>
         <div class="animation">
             <img src="/stats/wholesome2.gif" alt="Wholesome">

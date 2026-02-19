@@ -216,11 +216,11 @@ function wt_chat_webname_image_map(): array {
             continue;
         }
         $filename = $name . '.jpg';
-        $fullPath = __DIR__ . '/' . $filename;
+        $fullPath = __DIR__ . '/assets/' . $filename;
         if (!is_file($fullPath)) {
             continue;
         }
-        $map[strtolower($name)] = '/stats/' . rawurlencode($filename);
+        $map[strtolower($name)] = '/stats/assets/' . rawurlencode($filename);
     }
     return $map;
 }
