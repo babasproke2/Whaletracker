@@ -7,17 +7,30 @@ if (!defined('WT_STEAM_API_KEY') || WT_STEAM_API_KEY === '') {
     exit(1);
 }
 
-$targets = [
-    'ロリ中出し' => '76561198105849212',
-    'Yellow Dice' => '76561199214588079',
-    '76561198123370914' => '76561198123370914',
-    '76561198003965335' => '76561198003965335',
-    'Doom' => '76561198165590947',
-    'The Very Hungry Caterpillar' => '76561198065392296',
-    '76561199478391681' => '76561199478391681',
-    'Gangeral' => '76561198054651632',
-    'Palladion' => '76561198019684644',
-];
+$cliTargets = [];
+if (PHP_SAPI === 'cli') {
+    $argvCount = $_SERVER['argc'] ?? 0;
+    for ($i = 1; $i < $argvCount; $i++) {
+        $steamIdArg = trim((string)$_SERVER['argv'][$i]);
+        if ($steamIdArg !== '') {
+            $cliTargets[] = $steamIdArg;
+        }
+    }
+}
+
+$targets = !empty($cliTargets)
+    ? array_combine($cliTargets, $cliTargets)
+    : [
+        'ロリ中出し' => '76561198105849212',
+        'Yellow Dice' => '76561199214588079',
+        '76561198123370914' => '76561198123370914',
+        '76561198003965335' => '76561198003965335',
+        'Doom' => '76561198165590947',
+        'The Very Hungry Caterpillar' => '76561198065392296',
+        '76561199478391681' => '76561199478391681',
+        'Gangeral' => '76561198054651632',
+        'Palladion' => '76561198019684644',
+    ];
 
 function wt_fetch_profile_direct(string $steamId): ?array
 {

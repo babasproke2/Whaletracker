@@ -12,7 +12,7 @@ define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'jamkat22');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
-define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '7FA5829F77ACA436B3E9826FC7CFF063');
+define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '');
 
 define('WT_STEAM_RETURN_URL', getenv('WT_STEAM_RETURN_URL'));
 

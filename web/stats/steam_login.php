@@ -36,6 +36,8 @@ if ($openid->validate()) {
     $identity = $openid->identity;
     if (preg_match('#https://steamcommunity.com/openid/id/(\d+)#', $identity, $matches)) {
         $_SESSION['steamid'] = $matches[1];
+        // Force an immediate avatar refresh on successful sign-in.
+        wt_force_avatar_refresh($matches[1]);
     }
 }
 

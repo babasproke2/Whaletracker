@@ -12,7 +12,7 @@ define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'jamkat22');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
-define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '7FA5829F77ACA436B3E9826FC7CFF063');
+define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '');
 
 define('WT_STEAM_RETURN_URL', getenv('WT_STEAM_RETURN_URL'));
 
@@ -25,7 +25,7 @@ define('WT_AVATAR_CACHE_TTL', 6 * 3600);
 define('WT_LOGS_FRAGMENT_VERSION', '20251115');
 
 // Secret used to obfuscate web client IP into a short tag; set in env WT_CHAT_IP_SECRET
-define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: 'vXo8#Q3Lk9m@Zt1DbR2n');
+define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: '');
 
 // Logs caching + pagination controls
 define('WT_LOGS_TOTAL_LIMIT', (int)(getenv('WT_LOGS_TOTAL_LIMIT') ?: 50));

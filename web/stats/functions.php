@@ -60,6 +60,42 @@ function wt_weapon_category_metadata(): array
     return WT_WEAPON_CATEGORY_METADATA;
 }
 
+function wt_http_get(string $url, float $timeoutSeconds = 2.0): ?string
+{
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => $timeoutSeconds,
+            CURLOPT_CONNECTTIMEOUT => $timeoutSeconds,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+        $data = curl_exec($ch);
+        if ($data === false) {
+            error_log('[WhaleTracker] curl_get failed for ' . $url . ' — ' . curl_error($ch));
+            curl_close($ch);
+            return null;
+        }
+        $code = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+        if ($code >= 400) {
+            error_log('[WhaleTracker] HTTP ' . $code . ' fetching ' . $url);
+            return null;
+        }
+        return $data;
+    }
+
+    $context = stream_context_create(['http' => ['timeout' => $timeoutSeconds]]);
+    $data = @file_get_contents($url, false, $context);
+    if ($data === false) {
+        error_log('[WhaleTracker] file_get_contents failed for ' . $url);
+        return null;
+    }
+    return $data;
+}
+
 function wt_total_weapon_accuracy_counts(array $row): array
 {
     static $weaponAccuracyPairs = [
@@ -96,7 +132,6 @@ function wt_build_weapon_category_summary_from_row(array &$row, bool $fallbackOv
         $hitsKey = "hits_{$slug}";
         $shots = (int)($row[$shotsKey] ?? 0);
         $hits = (int)($row[$hitsKey] ?? 0);
-        unset($row[$shotsKey], $row[$hitsKey]);
         if ($shots <= 0) {
             continue;
         }
@@ -1504,14 +1539,15 @@ function wt_fetch_profiles_from_api(array $steamIds): array
             implode(',', $chunk)
         );
 
-        $context = stream_context_create(["http" => ["timeout" => 2.0]]);
-        $response = @file_get_contents($url, false, $context);
-        if ($response === false) {
+        $response = wt_http_get($url, 4.0);
+        if ($response === null) {
+            error_log('[WhaleTracker] Steam API profile fetch failed for chunk starting ' . ($chunk[0] ?? 'unknown'));
             continue;
         }
 
         $data = json_decode($response, true);
         if (!isset($data['response']['players'])) {
+            error_log('[WhaleTracker] Steam API profile response missing players for chunk starting ' . ($chunk[0] ?? 'unknown'));
             continue;
         }
 
@@ -1717,20 +1753,23 @@ function wt_avatar_cache_is_fresh(?string $basename): bool
     return (time() - filemtime($path)) < WT_AVATAR_CACHE_TTL;
 }
 
-function wt_avatar_cache_download(string $steamId, string $remoteUrl, ?string $existingBasename = null): ?string
+function wt_avatar_cache_download(string $steamId, string $remoteUrl, ?string $existingBasename = null, bool $forceRefresh = false): ?string
 {
     $pathInfo = parse_url($remoteUrl, PHP_URL_PATH);
     $extension = strtolower(pathinfo($pathInfo ?? '', PATHINFO_EXTENSION) ?: 'jpg');
     $basename = wt_avatar_cache_basename($steamId, $extension);
     $target = wt_avatar_cache_disk_path($basename);
 
-    if (is_file($target) && (time() - filemtime($target)) < WT_AVATAR_CACHE_TTL) {
+    if (!$forceRefresh && is_file($target) && (time() - filemtime($target)) < WT_AVATAR_CACHE_TTL) {
         return $basename;
     }
 
-    $context = stream_context_create(['http' => ['timeout' => 2]]);
-    $data = @file_get_contents($remoteUrl, false, $context);
-    if ($data === false) {
+    $data = wt_http_get($remoteUrl, 6.0);
+    if ($data === null) {
+        error_log('[WhaleTracker] Failed to download avatar for ' . $steamId . ' from ' . $remoteUrl);
+        if ($forceRefresh) {
+            return null;
+        }
         if ($existingBasename && wt_avatar_cache_is_fresh($existingBasename)) {
             return $existingBasename;
         }
@@ -1751,7 +1790,7 @@ function wt_avatar_cache_download(string $steamId, string $remoteUrl, ?string $e
     return $basename;
 }
 
-function wt_refresh_profile_avatar(string $steamId, array &$profile): bool
+function wt_refresh_profile_avatar(string $steamId, array &$profile, bool $forceRefresh = false): bool
 {
     $updated = false;
 
@@ -1781,7 +1820,7 @@ function wt_refresh_profile_avatar(string $steamId, array &$profile): bool
         return $updated;
     }
 
-    $downloadedBasename = wt_avatar_cache_download($steamId, $remoteSource, $profile['avatar_cached'] ?? null);
+    $downloadedBasename = wt_avatar_cache_download($steamId, $remoteSource, $profile['avatar_cached'] ?? null, $forceRefresh);
     if ($downloadedBasename) {
         if (($profile['avatar_cached'] ?? null) !== $downloadedBasename) {
             $profile['avatar_cached'] = $downloadedBasename;
@@ -1795,6 +1834,57 @@ function wt_refresh_profile_avatar(string $steamId, array &$profile): bool
     }
 
     return $updated;
+}
+
+function wt_refresh_profile_avatar_now(string $steamId): ?array
+{
+    if (WT_STEAM_API_KEY === '') {
+        return null;
+    }
+
+    $normalized = wt_normalize_steam_id($steamId);
+    if ($normalized === null) {
+        return null;
+    }
+
+    return wt_force_avatar_refresh($normalized);
+}
+
+function wt_force_avatar_refresh(string $steamId): ?array
+{
+    $profiles = wt_fetch_profiles_from_api([$steamId]);
+    $profile = $profiles[$steamId] ?? null;
+    if ($profile === null) {
+        error_log('[WhaleTracker] Steam API did not return profile for ' . $steamId);
+        return null;
+    }
+
+    // Remove any existing cached avatar files for this steamId to ensure overwrite.
+    $safe = wt_cache_safe_identifier($steamId);
+    foreach (glob(wt_cache_dir() . '/' . $safe . '-avatar.*') ?: [] as $existing) {
+        @unlink($existing);
+    }
+
+    $remoteSource = $profile['avatar_source'] ?? ($profile['avatarfull'] ?? ($profile['avatar'] ?? null));
+    if (!$remoteSource) {
+        error_log('[WhaleTracker] No avatar URL found for ' . $steamId);
+        return null;
+    }
+
+    $downloadedBasename = wt_avatar_cache_download($steamId, $remoteSource, $profile['avatar_cached'] ?? null, true);
+    if (!$downloadedBasename) {
+        error_log('[WhaleTracker] Avatar download failed for ' . $steamId . ' (source: ' . $remoteSource . ')');
+        return null;
+    }
+
+    $profile['avatar_cached'] = $downloadedBasename;
+    $profile['avatarfull'] = wt_avatar_cache_url_from_basename($downloadedBasename);
+    $profile['avatar_source'] = $remoteSource;
+
+    wt_write_cached_profile($steamId, $profile);
+    wt_update_cached_personaname($steamId, $profile['personaname'] ?? $steamId);
+
+    return $profile;
 }
 
 function wt_stats_with_profiles(array $stats, array $profiles): array
