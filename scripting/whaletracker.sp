@@ -7,7 +7,9 @@
 #include <sdkhooks>
 #include <clientprefs>
 #include <morecolors>
+#undef REQUIRE_EXTENSIONS
 #include <SteamWorks>
+#define REQUIRE_EXTENSIONS
 #include <geoip>
 #include <adt_array>
 #include <datapack>
@@ -22,11 +24,14 @@
 #define WHALE_POINTS_SQL_EXPR "CEIL((((GREATEST(damage_dealt,0) / 200.0) + (GREATEST(healing,0) / 400.0) + GREATEST(kills,0) + FLOOR(GREATEST(assists,0) * 0.5) + GREATEST(backstabs,0) + GREATEST(headshots,0)) * 10000.0) / GREATEST(GREATEST(deaths,0), 1))"
 #define WHALE_POINTS_MIN_KD_SUM 1000
 #define WHALE_LEADERBOARD_PAGE_SIZE 10
+#define WT_PUBLIC_IP_MODE_STEAMWORKS 0
+#define WT_PUBLIC_IP_MODE_MANUAL 1
 
 native int Filters_GetChatName(int client, char[] buffer, int maxlen);
 
 public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
 {
+    MarkNativeAsOptional("SteamWorks_GetPublicIP");
     MarkNativeAsOptional("Filters_GetChatName");
     RegPluginLibrary("whaletracker");
     CreateNative("WhaleTracker_GetCumulativeKills", Native_WhaleTracker_GetCumulativeKills);
@@ -118,6 +123,8 @@ Database g_hDatabase = null;
 ConVar g_CvarDatabase = null;
 ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hDebugMinimalStats = null;
+ConVar g_hPublicIpMode = null;
+ConVar g_hPublicIpManual = null;
 bool g_bDatabaseReady = false;
 
 enum MatchStatField
@@ -178,6 +185,9 @@ Handle g_hReconnectTimer = null;
 char g_SaveQueryBuffers[MAX_CONCURRENT_SAVE_QUERIES][SAVE_QUERY_MAXLEN];
 int g_SaveQueryUserIds[MAX_CONCURRENT_SAVE_QUERIES];
 bool g_SaveQuerySlotUsed[MAX_CONCURRENT_SAVE_QUERIES];
+int g_iCachedWhaleRank[MAXPLAYERS + 1];
+bool g_bCachedWhaleRankValid[MAXPLAYERS + 1];
+int g_iRankQueryCooldownUntil = 0;
 
 public void OnConfigsExecuted()
 {
@@ -237,6 +247,8 @@ static void ResetAllStats(int client)
     g_bStatsDirty[client] = false;
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
+    g_iCachedWhaleRank[client] = 0;
+    g_bCachedWhaleRankValid[client] = false;
 }
 
 static void ResetMapStats(int client)
@@ -568,6 +580,20 @@ static bool WhaleTracker_IsConnectionLostError(const char[] error)
         || StrContains(error, "Server has gone away", false) != -1;
 }
 
+static void WhaleTracker_MarkRankQueryUnstable(float cooldownSeconds = 15.0)
+{
+    int until = GetTime() + RoundToCeil(cooldownSeconds);
+    if (until > g_iRankQueryCooldownUntil)
+    {
+        g_iRankQueryCooldownUntil = until;
+    }
+}
+
+static bool WhaleTracker_IsRankQueryInCooldown()
+{
+    return (g_iRankQueryCooldownUntil > GetTime());
+}
+
 static void WhaleTracker_ScheduleReconnect(float delay)
 {
     if (g_bShuttingDown)
@@ -822,14 +848,24 @@ static void RefreshHostAddress()
 
 static void RefreshPublicHostIp()
 {
-    int addr[4];
-    if (SteamWorks_GetPublicIP(addr))
+    bool useManual = (g_hPublicIpMode != null && g_hPublicIpMode.IntValue == WT_PUBLIC_IP_MODE_MANUAL);
+    if (useManual && g_hPublicIpManual != null)
     {
-        Format(g_sPublicHostIp, sizeof(g_sPublicHostIp), "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);
+        g_hPublicIpManual.GetString(g_sPublicHostIp, sizeof(g_sPublicHostIp));
+        TrimString(g_sPublicHostIp);
     }
     else
     {
-        g_sPublicHostIp[0] = '\0';
+        int addr[4];
+        if (GetFeatureStatus(FeatureType_Native, "SteamWorks_GetPublicIP") == FeatureStatus_Available
+            && SteamWorks_GetPublicIP(addr))
+        {
+            Format(g_sPublicHostIp, sizeof(g_sPublicHostIp), "%d.%d.%d.%d", addr[0], addr[1], addr[2], addr[3]);
+        }
+        else
+        {
+            g_sPublicHostIp[0] = '\0';
+        }
     }
 
     RefreshHostCity();
@@ -1535,6 +1571,21 @@ public void OnPluginStart()
         true,
         1.0
     );
+    g_hPublicIpMode = CreateConVar(
+        "sm_whaletracker_public_ip_mode",
+        "0",
+        "Public IP mode (0 = SteamWorks_GetPublicIP, 1 = sm_whaletracker_public_ip).",
+        FCVAR_NONE,
+        true,
+        0.0,
+        true,
+        1.0
+    );
+    g_hPublicIpManual = CreateConVar(
+        "sm_whaletracker_public_ip",
+        "",
+        "Manual public server IP used when sm_whaletracker_public_ip_mode is 1."
+    );
 
     if (g_hVisibleMaxPlayers == null)
     {
@@ -1860,6 +1911,11 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to query points cache for join message: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_MarkRankQueryUnstable();
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
         AnnounceDefaultJoin(client);
         return;
     }
@@ -1872,6 +1928,12 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
 
     int points = results.FetchInt(0);
     int rank = results.FetchInt(4);
+    if (rank < 0)
+    {
+        rank = 0;
+    }
+    g_iCachedWhaleRank[client] = rank;
+    g_bCachedWhaleRankValid[client] = true;
 
     if (points < 0)
     {
@@ -3314,6 +3376,9 @@ static void CacheWhalePointsForClient(int client, int points, int rank, const ch
         rank = 0;
     }
 
+    g_iCachedWhaleRank[client] = rank;
+    g_bCachedWhaleRankValid[client] = true;
+
     char query[1600];
     Format(query, sizeof(query),
         "INSERT INTO whaletracker_points_cache (steamid, points, rank, name, name_color, prename, updated_at) "
@@ -3593,26 +3658,24 @@ static void EnsureClientStatsLoadedForPoints(int client)
     delete results;
 }
 
-static int GetWhalePointsRankForClient(int client)
+static int GetWhalePointsRankForClientCached(int client)
 {
-    if (!g_bDatabaseReady || g_hDatabase == null)
+    int fallbackRank = 0;
+    if (client > 0 && client <= MaxClients && g_bCachedWhaleRankValid[client])
     {
-        return 0;
+        fallbackRank = g_iCachedWhaleRank[client];
+        if (fallbackRank < 0)
+        {
+            fallbackRank = 0;
+        }
     }
 
     if (client <= 0 || client > MaxClients || !IsClientConnected(client))
     {
-        return 0;
-    }
-
-    EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
-    {
-        return 0;
+        return fallbackRank;
     }
 
     EnsureClientStatsLoadedForPoints(client);
-
     int selfKills = (g_Stats[client].kills > 0) ? g_Stats[client].kills : 0;
     int selfDeaths = (g_Stats[client].deaths > 0) ? g_Stats[client].deaths : 0;
     if ((selfKills + selfDeaths) <= WHALE_POINTS_MIN_KD_SUM)
@@ -3620,26 +3683,28 @@ static int GetWhalePointsRankForClient(int client)
         return 0;
     }
 
+    if (WhaleTracker_IsRankQueryInCooldown())
+    {
+        return fallbackRank;
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return fallbackRank;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return fallbackRank;
+    }
+
     char escapedSteamId[STEAMID64_LEN * 2];
     EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
 
-    int selfPoints = GetWhalePointsForClient(client);
-    if (selfPoints < 0)
-    {
-        selfPoints = 0;
-    }
-
-    char query[1600];
+    char query[256];
     Format(query, sizeof(query),
-        "SELECT 1 + COUNT(*) FROM whaletracker w "
-        ... "WHERE (GREATEST(w.kills,0) + GREATEST(w.deaths,0)) > %d "
-        ... "AND (((%s) > %d) "
-        ... "OR (((%s) = %d) AND w.steamid < '%s'))",
-        WHALE_POINTS_MIN_KD_SUM,
-        WHALE_POINTS_SQL_EXPR,
-        selfPoints,
-        WHALE_POINTS_SQL_EXPR,
-        selfPoints,
+        "SELECT rank FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
     DBResultSet results = SQL_Query(g_hDatabase, query);
@@ -3647,23 +3712,36 @@ static int GetWhalePointsRankForClient(int client)
     {
         char error[256];
         SQL_GetError(g_hDatabase, error, sizeof(error));
-        LogError("[WhaleTracker] WhalePoints rank query failed: %s", error);
-        return 0;
+        LogError("[WhaleTracker] WhalePoints cached rank query failed: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_MarkRankQueryUnstable();
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
+        return fallbackRank;
     }
 
     if (!SQL_HasResultSet(results) || !results.FetchRow())
     {
         delete results;
-        return 0;
+        return fallbackRank;
     }
 
     int rank = results.FetchInt(0);
     delete results;
-    if (rank < 1)
+    if (rank < 0)
     {
-        rank = 1;
+        rank = 0;
     }
+
+    g_iCachedWhaleRank[client] = rank;
+    g_bCachedWhaleRankValid[client] = true;
     return rank;
+}
+
+static int GetWhalePointsRankForClient(int client)
+{
+    return GetWhalePointsRankForClientCached(client);
 }
 
 public any Native_WhaleTracker_GetCumulativeKills(Handle plugin, int numParams)
