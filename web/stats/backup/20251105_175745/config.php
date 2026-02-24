@@ -7,8 +7,8 @@
 
 define('WT_DB_HOST', getenv('WT_DB_HOST') ?: '127.0.0.1');
 define('WT_DB_NAME', getenv('WT_DB_NAME') ?: 'sourcemod');
-define('WT_DB_USER', getenv('WT_DB_USER') ?: 'tf2server');
-define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'jamkat22');
+define('WT_DB_USER', getenv('WT_DB_USER') ?: 'youruserhere');
+define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'yourpasswordhere');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
