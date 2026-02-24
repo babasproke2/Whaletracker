@@ -7,11 +7,13 @@
 
 define('WT_DB_HOST', getenv('WT_DB_HOST') ?: '127.0.0.1');
 define('WT_DB_NAME', getenv('WT_DB_NAME') ?: 'sourcemod');
-define('WT_DB_USER', getenv('WT_DB_USER') ?: 'tf2server');
-define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'jamkat22');
+// DB credentials live in environment variables (WT_DB_USER / WT_DB_PASS).
+define('WT_DB_USER', getenv('WT_DB_USER') ?: '');
+define('WT_DB_PASS', getenv('WT_DB_PASS') ?: '');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
+// Steam API key lives in environment variable STEAM_API_KEY.
 define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '');
 
 define('WT_STEAM_RETURN_URL', getenv('WT_STEAM_RETURN_URL'));
@@ -24,7 +26,7 @@ define('WT_AVATAR_CACHE_TTL', 6 * 3600);
 // Bump when logs fragment markup changes to force static rebuilds
 define('WT_LOGS_FRAGMENT_VERSION', '20251115');
 
-// Secret used to obfuscate web client IP into a short tag; set in env WT_CHAT_IP_SECRET
+// Chat IP hash secret lives in environment variable WT_CHAT_IP_SECRET.
 define('WT_CHAT_IP_SECRET', getenv('WT_CHAT_IP_SECRET') ?: '');
 
 // Logs caching + pagination controls
