@@ -97,7 +97,17 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
     if (IsValidClient(attacker) && !IsFakeClient(attacker) && WhaleTracker_IsTrackingEnabled(attacker))
     {
         if (IsProjectileAirshot(attacker, victim))
+        {
             g_Stats[attacker].totalAirshots += 1;
+            if (g_hAirshotForward != null)
+            {
+                Call_StartForward(g_hAirshotForward);
+                Call_PushCell(attacker);
+                Call_PushCell(victim);
+                int _ret;
+                Call_Finish(_ret);
+            }
+        }
 
         g_Stats[attacker].totalDamage += damageInt;
         g_MapStats[attacker].totalDamage += damageInt;

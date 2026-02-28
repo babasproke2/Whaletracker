@@ -60,15 +60,12 @@ public Action Command_ShowPoints(int client, int args)
     {
         return Plugin_Handled;
     }
-
     int target = client;
-
     if (args >= 1)
     {
         char targetArg[64];
         GetCmdArgString(targetArg, sizeof(targetArg));
         TrimString(targetArg);
-
         if (targetArg[0])
         {
             int candidate = FindTarget(client, targetArg, true, false);
@@ -83,9 +80,7 @@ public Action Command_ShowPoints(int client, int args)
             }
         }
     }
-
     EnsureClientStatsLoadedForPoints(target);
-
     int combined = g_Stats[target].kills + g_Stats[target].deaths;
     if (combined <= WHALE_POINTS_MIN_KD_SUM)
     {
@@ -95,7 +90,6 @@ public Action Command_ShowPoints(int client, int args)
         CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths exceeds %d (current: %d).", colorTagUnranked, target, WHALE_POINTS_MIN_KD_SUM, combined);
         return Plugin_Handled;
     }
-
     int points = GetWhalePointsForClient(target);
     int rank = GetWhalePointsRankForClient(target);
     int lifetimeKills = g_Stats[target].kills;
@@ -105,13 +99,11 @@ public Action Command_ShowPoints(int client, int args)
     GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
     char playerName[MAX_NAME_LENGTH];
     GetClientName(target, playerName, sizeof(playerName));
-
     CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots){default} / {axis}(deaths){default} * 10000");
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
-
     return Plugin_Handled;
 }
 
@@ -372,6 +364,7 @@ int GetWhalePointsForClient(int client)
     int headshots;
     int damage;
     int healing;
+    int damageTaken;
 
     if (g_Stats[client].loaded)
     {
@@ -382,6 +375,7 @@ int GetWhalePointsForClient(int client)
         headshots = g_Stats[client].totalHeadshots;
         damage = g_Stats[client].totalDamage;
         healing = g_Stats[client].totalHealing;
+        damageTaken = g_Stats[client].totalDamageTaken;
     }
     else
     {
@@ -390,7 +384,7 @@ int GetWhalePointsForClient(int client)
 
         char query[256];
         Format(query, sizeof(query),
-            "SELECT kills, deaths, assists, backstabs, headshots, damage_dealt, healing "
+            "SELECT kills, deaths, assists, backstabs, headshots, damage_dealt, healing, damageTaken "
             ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
             escapedSteamId);
 
@@ -416,6 +410,7 @@ int GetWhalePointsForClient(int client)
         headshots = results.FetchInt(4);
         damage = results.FetchInt(5);
         healing = results.FetchInt(6);
+        damageTaken = results.FetchInt(7);
         delete results;
     }
 
@@ -426,6 +421,7 @@ int GetWhalePointsForClient(int client)
     int safeDamage = (damage > 0) ? damage : 0;
     int safeDeaths = (deaths > 0) ? deaths : 0;
     int safeHealing = (healing > 0) ? healing : 0;
+    int safeDamageTaken = (damageTaken > 0) ? damageTaken : 0;
 
     if ((safeKills + safeDeaths) <= WHALE_POINTS_MIN_KD_SUM)
     {
@@ -448,7 +444,7 @@ int GetWhalePointsForClient(int client)
         positive = 2147483000.0;
     }
 
-    int denominatorBase = safeDeaths;
+    int denominatorBase = RoundToFloor(safeDeaths + safeDamageTaken / 200.0);
     if (denominatorBase < 1)
     {
         denominatorBase = 1;

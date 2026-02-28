@@ -123,7 +123,7 @@ public Action Timer_UpdateOnlineStats(Handle timer, any data)
 
     int now = GetTime();
     float engineNow = GetEngineTime();
-    int playerCount = GetClientCount(true);
+    int playerCount = GetClientCount(false);
 
     int visibleMax = GetMaxHumanPlayers();
     if (g_hVisibleMaxPlayers != null)
