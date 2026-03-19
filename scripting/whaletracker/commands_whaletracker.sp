@@ -101,7 +101,7 @@ public Action Command_ShowPoints(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 10) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
@@ -362,6 +362,8 @@ int GetWhalePointsForClient(int client)
     int assists;
     int backstabs;
     int headshots;
+    int marketGardenHits;
+    int totalUbers;
     int damage;
     int healing;
     int damageTaken;
@@ -373,6 +375,8 @@ int GetWhalePointsForClient(int client)
         assists = g_Stats[client].totalAssists;
         backstabs = g_Stats[client].totalBackstabs;
         headshots = g_Stats[client].totalHeadshots;
+        marketGardenHits = g_Stats[client].totalMarketGardenHits;
+        totalUbers = g_Stats[client].totalUbers;
         damage = g_Stats[client].totalDamage;
         healing = g_Stats[client].totalHealing;
         damageTaken = g_Stats[client].totalDamageTaken;
@@ -384,7 +388,7 @@ int GetWhalePointsForClient(int client)
 
         char query[256];
         Format(query, sizeof(query),
-            "SELECT kills, deaths, assists, backstabs, headshots, damage_dealt, healing, damageTaken "
+            "SELECT kills, deaths, assists, backstabs, headshots, marketGardenHits, total_ubers, damage_dealt, healing, damage_taken "
             ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
             escapedSteamId);
 
@@ -408,9 +412,11 @@ int GetWhalePointsForClient(int client)
         assists = results.FetchInt(2);
         backstabs = results.FetchInt(3);
         headshots = results.FetchInt(4);
-        damage = results.FetchInt(5);
-        healing = results.FetchInt(6);
-        damageTaken = results.FetchInt(7);
+        marketGardenHits = results.FetchInt(5);
+        totalUbers = results.FetchInt(6);
+        damage = results.FetchInt(7);
+        healing = results.FetchInt(8);
+        damageTaken = results.FetchInt(9);
         delete results;
     }
 
@@ -418,6 +424,8 @@ int GetWhalePointsForClient(int client)
     int safeAssists = (assists > 0) ? assists : 0;
     int safeBackstabs = (backstabs > 0) ? backstabs : 0;
     int safeHeadshots = (headshots > 0) ? headshots : 0;
+    int safeMarketGardenHits = (marketGardenHits > 0) ? marketGardenHits : 0;
+    int safeTotalUbers = (totalUbers > 0) ? totalUbers : 0;
     int safeDamage = (damage > 0) ? damage : 0;
     int safeDeaths = (deaths > 0) ? deaths : 0;
     int safeHealing = (healing > 0) ? healing : 0;
@@ -435,6 +443,8 @@ int GetWhalePointsForClient(int client)
     positive += float(RoundToFloor(float(safeAssists) * 0.5));
     positive += float(safeBackstabs);
     positive += float(safeHeadshots);
+    positive += float(safeMarketGardenHits * 10);
+    positive += float(safeTotalUbers * 10);
     if (positive < 0.0)
     {
         positive = 0.0;
@@ -491,7 +501,7 @@ void EnsureClientStatsLoadedForPoints(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
+        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
         ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
@@ -513,14 +523,15 @@ void EnsureClientStatsLoadedForPoints(int client)
         g_Stats[client].totalMedicDrops = results.FetchInt(6);
         g_Stats[client].totalUberDrops = results.FetchInt(7);
         g_Stats[client].totalAirshots = results.FetchInt(8);
-        g_Stats[client].totalHeadshots = results.FetchInt(9);
-        g_Stats[client].totalBackstabs = results.FetchInt(10);
-        g_Stats[client].bestKillstreak = results.FetchInt(11);
-        g_Stats[client].totalAssists = results.FetchInt(12);
-        g_Stats[client].playtime = results.FetchInt(13);
-        g_Stats[client].totalDamage = results.FetchInt(14);
-        g_Stats[client].totalDamageTaken = results.FetchInt(15);
-        g_Stats[client].lastSeen = results.FetchInt(16);
+        g_Stats[client].totalMarketGardenHits = results.FetchInt(9);
+        g_Stats[client].totalHeadshots = results.FetchInt(10);
+        g_Stats[client].totalBackstabs = results.FetchInt(11);
+        g_Stats[client].bestKillstreak = results.FetchInt(12);
+        g_Stats[client].totalAssists = results.FetchInt(13);
+        g_Stats[client].playtime = results.FetchInt(14);
+        g_Stats[client].totalDamage = results.FetchInt(15);
+        g_Stats[client].totalDamageTaken = results.FetchInt(16);
+        g_Stats[client].lastSeen = results.FetchInt(17);
         g_Stats[client].loaded = true;
     }
 

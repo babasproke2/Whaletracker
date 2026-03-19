@@ -136,6 +136,7 @@ public void OnPluginStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     RefreshServerFlags();
+    WhaleTracker_RustInit();
 
     WhaleTracker_SQLConnect();
 
@@ -208,6 +209,7 @@ public void OnMapEnd()
 
     FlushSaveQueueSync();
     FinalizeCurrentMatch(false);
+    WhaleTracker_RustFlushSqlBatch();
 }
 
 public void OnPluginEnd()
@@ -217,6 +219,7 @@ public void OnPluginEnd()
     FinalizeCurrentMatch(true);
 
     FlushSaveQueueSync();
+    WhaleTracker_RustShutdown();
 
     if (g_hOnlineTimer != null)
     {

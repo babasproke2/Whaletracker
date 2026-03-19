@@ -48,6 +48,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`medic_drops` INTEGER DEFAULT 0,"
         ... "`uber_drops` INTEGER DEFAULT 0,"
         ... "`airshots` INTEGER DEFAULT 0,"
+        ... "`marketGardenHits` INTEGER DEFAULT 0,"
         ... "`headshots` INTEGER DEFAULT 0,"
         ... "`backstabs` INTEGER DEFAULT 0,"
         ... "`best_killstreak` INTEGER DEFAULT 0,"
@@ -91,6 +92,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`healing` INTEGER DEFAULT 0,"
         ... "`headshots` INTEGER DEFAULT 0,"
         ... "`backstabs` INTEGER DEFAULT 0,"
+        ... "`marketGardenHits` INTEGER DEFAULT 0,"
         ... "`playtime` INTEGER DEFAULT 0,"
         ... "`total_ubers` INTEGER DEFAULT 0,"
         ... "`best_streak` INTEGER DEFAULT 0,"
@@ -172,6 +174,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
             ... "`medic_drops` INTEGER DEFAULT 0,"
             ... "`uber_drops` INTEGER DEFAULT 0,"
             ... "`airshots` INTEGER DEFAULT 0,"
+            ... "`marketGardenHits` INTEGER DEFAULT 0,"
             ... "`shots_shotguns` INTEGER DEFAULT 0,"
             ... "`hits_shotguns` INTEGER DEFAULT 0,"
             ... "`shots_scatterguns` INTEGER DEFAULT 0,"
@@ -225,6 +228,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_dealt INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS last_seen INTEGER DEFAULT 0",
 
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_shotguns INTEGER DEFAULT 0",
@@ -267,6 +271,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS healing INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS headshots INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS backstabs INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS playtime INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS total_ubers INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
@@ -352,6 +357,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS medic_drops INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS airshots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_shotguns INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_shotguns INTEGER DEFAULT 0",
@@ -483,7 +489,7 @@ void LoadClientStats(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
+        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
         ... "FROM whaletracker WHERE steamid = '%s'", steamId);
 
     g_hDatabase.Query(WhaleTracker_LoadCallback, query, client);
@@ -515,14 +521,15 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
         g_Stats[index].totalMedicDrops = results.FetchInt(6);
         g_Stats[index].totalUberDrops = results.FetchInt(7);
         g_Stats[index].totalAirshots = results.FetchInt(8);
-        g_Stats[index].totalHeadshots = results.FetchInt(9);
-        g_Stats[index].totalBackstabs = results.FetchInt(10);
-        g_Stats[index].bestKillstreak = results.FetchInt(11);
-        g_Stats[index].totalAssists = results.FetchInt(12);
-        g_Stats[index].playtime = results.FetchInt(13);
-        g_Stats[index].totalDamage = results.FetchInt(14);
-        g_Stats[index].totalDamageTaken = results.FetchInt(15);
-        g_Stats[index].lastSeen = results.FetchInt(16);
+        g_Stats[index].totalMarketGardenHits = results.FetchInt(9);
+        g_Stats[index].totalHeadshots = results.FetchInt(10);
+        g_Stats[index].totalBackstabs = results.FetchInt(11);
+        g_Stats[index].bestKillstreak = results.FetchInt(12);
+        g_Stats[index].totalAssists = results.FetchInt(13);
+        g_Stats[index].playtime = results.FetchInt(14);
+        g_Stats[index].totalDamage = results.FetchInt(15);
+        g_Stats[index].totalDamageTaken = results.FetchInt(16);
+        g_Stats[index].lastSeen = results.FetchInt(17);
         g_Stats[index].loaded = true;
         g_MapStats[index].loaded = true;
         g_MapStats[index].totalUberDrops = g_Stats[index].totalUberDrops;
@@ -551,7 +558,8 @@ bool HasMapActivity(WhaleStats stats)
         || stats.totalHeadshots > 0
         || stats.totalBackstabs > 0
         || stats.totalUberDrops > 0
-        || stats.totalMedicDrops > 0;
+        || stats.totalMedicDrops > 0
+        || stats.totalMarketGardenHits > 0;
 }
 
 bool SaveClientMapStats(int client)
@@ -602,10 +610,10 @@ void QueueStatsSave(int client, int userId)
 
     Format(query, sizeof(query),
         "INSERT INTO whaletracker "
-        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, headshots, backstabs, "
+        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, marketGardenHits, headshots, backstabs, "
         ... "best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen, "
         ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers) "
-        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
         ... "%d, %d, %d, %d, %d, %d, "
         ... "%s) "
         ... "ON DUPLICATE KEY UPDATE "
@@ -618,6 +626,7 @@ void QueueStatsSave(int client, int userId)
         ... "medic_drops = GREATEST(medic_drops, VALUES(medic_drops)), "
         ... "uber_drops = GREATEST(uber_drops, VALUES(uber_drops)), "
         ... "airshots = GREATEST(airshots, VALUES(airshots)), "
+        ... "marketGardenHits = GREATEST(marketGardenHits, VALUES(marketGardenHits)), "
         ... "headshots = GREATEST(headshots, VALUES(headshots)), "
         ... "backstabs = GREATEST(backstabs, VALUES(backstabs)), "
         ... "best_killstreak = GREATEST(best_killstreak, VALUES(best_killstreak)), "
@@ -653,6 +662,7 @@ void QueueStatsSave(int client, int userId)
         g_Stats[client].totalMedicDrops,
         g_Stats[client].totalUberDrops,
         g_Stats[client].totalAirshots,
+        g_Stats[client].totalMarketGardenHits,
         g_Stats[client].totalHeadshots,
         g_Stats[client].totalBackstabs,
         g_Stats[client].bestKillstreak,
