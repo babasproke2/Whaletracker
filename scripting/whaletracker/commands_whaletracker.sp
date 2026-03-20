@@ -107,6 +107,59 @@ public Action Command_ShowPoints(int client, int args)
     return Plugin_Handled;
 }
 
+public Action Command_ShowPointsMe(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+    int target = client;
+    if (args >= 1)
+    {
+        char targetArg[64];
+        GetCmdArgString(targetArg, sizeof(targetArg));
+        TrimString(targetArg);
+        if (targetArg[0])
+        {
+            int candidate = FindTarget(client, targetArg, true, false);
+            if (candidate > 0 && IsValidClient(candidate) && !IsFakeClient(candidate))
+            {
+                target = candidate;
+            }
+            else
+            {
+                CPrintToChat(client, "{green}[WhaleTracker]{default} Could not find player '%s'.", targetArg);
+                return Plugin_Handled;
+            }
+        }
+    }
+    EnsureClientStatsLoadedForPoints(target);
+    int combined = g_Stats[target].kills + g_Stats[target].deaths;
+    if (combined <= WHALE_POINTS_MIN_KD_SUM)
+    {
+        char colorTagUnranked[32];
+        GetClientFiltersNameColorTag(target, colorTagUnranked, sizeof(colorTagUnranked));
+        CacheWhalePointsForClient(target, 0, 0, colorTagUnranked);
+        CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths exceeds %d (current: %d).", colorTagUnranked, target, WHALE_POINTS_MIN_KD_SUM, combined);
+        return Plugin_Handled;
+    }
+    int points = GetWhalePointsForClient(target);
+    int rank = GetWhalePointsRankForClient(target);
+    int lifetimeKills = g_Stats[target].kills;
+    int lifetimeDeaths = g_Stats[target].deaths;
+    float lifetimeKd = (lifetimeDeaths > 0) ? float(lifetimeKills) / float(lifetimeDeaths) : float(lifetimeKills);
+    char colorTag[32];
+    GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
+    char playerName[MAX_NAME_LENGTH];
+    GetClientName(target, playerName, sizeof(playerName));
+    CPrintToChat(client, "{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
+    CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 10) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
+    CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
+    CacheWhalePointsForClient(target, points, rank, colorTag);
+    return Plugin_Handled;
+}
+
 public Action Command_ShowLeaderboard(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))

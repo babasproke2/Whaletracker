@@ -115,6 +115,7 @@ public void OnPluginStart()
     RegConsoleCmd("sm_points", Command_ShowPoints, "Show your WhalePoints total.");
     RegConsoleCmd("sm_pos", Command_ShowPoints, "Show your WhalePoints total.");
     RegConsoleCmd("sm_pts", Command_ShowPoints, "Show your WhalePoints total.");
+    RegConsoleCmd("sm_ptsme", Command_ShowPointsMe, "Show your WhalePoints only to yourself.");
     RegConsoleCmd("sm_rank", Command_ShowPoints, "Show your WhalePoints total.");
     RegConsoleCmd("sm_ps", Command_ShowPoints, "Show your WhalePoints total.");
     RegConsoleCmd("sm_ranks", Command_ShowLeaderboard, "Show WhaleTracker leaderboard page.");

@@ -302,17 +302,14 @@ bool IsSupstatsDirectHitProjectileClassname(const char[] classname)
 
 bool IsMarketGardenerCriticalHit(int weapon, int damageType)
 {
-    if ((damageType & DMG_CRIT) == 0)
+    // Must be the Market Gardener
+    if (GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") != WT_MARKET_GARDENER_DEF_INDEX)
     {
         return false;
     }
 
-    if (weapon <= MaxClients || !IsValidEntity(weapon) || !HasEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex"))
-    {
-        return false;
-    }
-
-    return GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") == WT_MARKET_GARDENER_DEF_INDEX;
+    // Check crit flag
+    return (damageType & DMG_CRIT) != 0;
 }
 
 float DistanceAboveGroundBox(int victim)
