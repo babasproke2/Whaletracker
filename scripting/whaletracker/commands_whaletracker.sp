@@ -101,7 +101,7 @@ public Action Command_ShowPoints(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 10) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
@@ -154,7 +154,7 @@ public Action Command_ShowPointsMe(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChat(client, "{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 10) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 200)){default} * 10000");
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
@@ -496,7 +496,7 @@ int GetWhalePointsForClient(int client)
     positive += float(RoundToFloor(float(safeAssists) * 0.5));
     positive += float(safeBackstabs);
     positive += float(safeHeadshots);
-    positive += float(safeMarketGardenHits * 10);
+    positive += float(safeMarketGardenHits * 5);
     positive += float(safeTotalUbers * 10);
     if (positive < 0.0)
     {
@@ -507,7 +507,7 @@ int GetWhalePointsForClient(int client)
         positive = 2147483000.0;
     }
 
-    int denominatorBase = RoundToFloor(safeDeaths + safeDamageTaken / 200.0);
+    int denominatorBase = RoundToFloor(safeDeaths + safeDamageTaken / 500.0);
     if (denominatorBase < 1)
     {
         denominatorBase = 1;

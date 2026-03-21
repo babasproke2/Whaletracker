@@ -1,6 +1,7 @@
 #define WT_AIRSHOT_MIN_HEIGHT 170.0
 
 bool g_bPlayerTakenDirectHit[MAXPLAYERS + 1];
+bool g_bInExplosiveJump[MAXPLAYERS + 1];
 
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 {
@@ -9,8 +10,31 @@ public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast
         return;
 
     g_bPlayerTakenDirectHit[client] = false;
+    g_bInExplosiveJump[client] = false;
     ResetLifeCounters(g_Stats[client]);
     ResetLifeCounters(g_MapStats[client]);
+}
+
+public void Event_ExplosiveJump(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    g_bInExplosiveJump[client] = true;
+}
+
+public void Event_ExplosiveJumpLanded(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (!IsValidClient(client))
+    {
+        return;
+    }
+
+    g_bInExplosiveJump[client] = false;
 }
 
 public void OnEntityCreated(int entity, const char[] classname)
@@ -139,7 +163,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
             }
         }
 
-        if (IsMarketGardenerCriticalHit(weapon, damagetype))
+        if (IsMarketGardenerHit(attacker, weapon))
         {
             g_Stats[attacker].totalMarketGardenHits += 1;
             g_MapStats[attacker].totalMarketGardenHits += 1;
@@ -300,16 +324,55 @@ bool IsSupstatsDirectHitProjectileClassname(const char[] classname)
         || StrEqual(classname, "tf_projectile_pipe", false);
 }
 
-bool IsMarketGardenerCriticalHit(int weapon, int damageType)
+int GetWeaponDefIndexSafe(int weapon)
 {
-    // Must be the Market Gardener
-    if (GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") != WT_MARKET_GARDENER_DEF_INDEX)
+    if (weapon <= MaxClients || !IsValidEntity(weapon) || !HasEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex"))
+    {
+        return -1;
+    }
+
+    return GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex");
+}
+
+bool IsMarketGardenerWeapon(int weapon)
+{
+    return GetWeaponDefIndexSafe(weapon) == WT_MARKET_GARDENER_DEF_INDEX;
+}
+
+bool IsMarketGardenerHit(int attacker, int weapon)
+{
+    bool validAttacker = IsValidClient(attacker);
+    TFClassType attackerClass = validAttacker ? TF2_GetPlayerClass(attacker) : TFClass_Unknown;
+    bool inExplosiveJump = validAttacker ? g_bInExplosiveJump[attacker] : false;
+
+    int activeWeapon = -1;
+    if (validAttacker)
+    {
+        activeWeapon = GetEntPropEnt(attacker, Prop_Send, "m_hActiveWeapon");
+    }
+
+    if (!inExplosiveJump)
     {
         return false;
     }
 
-    // Check crit flag
-    return (damageType & DMG_CRIT) != 0;
+    if (!validAttacker)
+    {
+        return false;
+    }
+
+    if (attackerClass != TFClass_Soldier)
+    {
+        return false;
+    }
+
+    if (IsMarketGardenerWeapon(weapon))
+    {
+        return true;
+    }
+
+    int meleeWeapon = validAttacker ? GetPlayerWeaponSlot(attacker, TFWeaponSlot_Melee) : -1;
+    return (activeWeapon == meleeWeapon) && IsMarketGardenerWeapon(activeWeapon);
 }
 
 float DistanceAboveGroundBox(int victim)

@@ -109,6 +109,10 @@ public void OnPluginStart()
     HookEvent("player_spawn", Event_PlayerSpawn, EventHookMode_Post);
     HookEvent("player_healed", Event_PlayerHealed, EventHookMode_Post);
     HookEvent("player_chargedeployed", Event_UberDeployed, EventHookMode_Post);
+    HookEvent("rocket_jump", Event_ExplosiveJump, EventHookMode_Pre);
+    HookEvent("sticky_jump", Event_ExplosiveJump, EventHookMode_Pre);
+    HookEvent("rocket_jump_landed", Event_ExplosiveJumpLanded, EventHookMode_Pre);
+    HookEvent("sticky_jump_landed", Event_ExplosiveJumpLanded, EventHookMode_Pre);
 
     RegConsoleCmd("sm_whalestats", Command_ShowStats, "Show your Whale Tracker statistics.");
     RegConsoleCmd("sm_stats", Command_ShowStats, "Show your Whale Tracker statistics.");
