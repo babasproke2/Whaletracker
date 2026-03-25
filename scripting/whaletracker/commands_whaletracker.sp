@@ -101,7 +101,7 @@ public Action Command_ShowPoints(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
+    CPrintToChat(client, "Calculation: {lightgreen}((damage / 300) + (healing / 400) + (floor(kills * 1.5 + assists * 0.5)) + backstabs + headshots + (airshots * 3) + medic kills + heavy kills + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
@@ -426,6 +426,9 @@ int GetWhalePointsForClient(int client)
     int assists;
     int backstabs;
     int headshots;
+    int medicKills;
+    int heavyKills;
+    int airshots;
     int marketGardenHits;
     int totalUbers;
     int damage;
@@ -439,6 +442,9 @@ int GetWhalePointsForClient(int client)
         assists = g_Stats[client].totalAssists;
         backstabs = g_Stats[client].totalBackstabs;
         headshots = g_Stats[client].totalHeadshots;
+        medicKills = g_Stats[client].totalMedicKills;
+        heavyKills = g_Stats[client].totalHeavyKills;
+        airshots = g_Stats[client].totalAirshots;
         marketGardenHits = g_Stats[client].totalMarketGardenHits;
         totalUbers = g_Stats[client].totalUbers;
         damage = g_Stats[client].totalDamage;
@@ -452,7 +458,7 @@ int GetWhalePointsForClient(int client)
 
         char query[256];
         Format(query, sizeof(query),
-            "SELECT kills, deaths, assists, backstabs, headshots, marketGardenHits, total_ubers, damage_dealt, healing, damage_taken "
+            "SELECT kills, deaths, assists, backstabs, headshots, medicKills, heavyKills, airshots, marketGardenHits, total_ubers, damage_dealt, healing, damage_taken "
             ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
             escapedSteamId);
 
@@ -476,11 +482,14 @@ int GetWhalePointsForClient(int client)
         assists = results.FetchInt(2);
         backstabs = results.FetchInt(3);
         headshots = results.FetchInt(4);
-        marketGardenHits = results.FetchInt(5);
-        totalUbers = results.FetchInt(6);
-        damage = results.FetchInt(7);
-        healing = results.FetchInt(8);
-        damageTaken = results.FetchInt(9);
+        medicKills = results.FetchInt(5);
+        heavyKills = results.FetchInt(6);
+        airshots = results.FetchInt(7);
+        marketGardenHits = results.FetchInt(8);
+        totalUbers = results.FetchInt(9);
+        damage = results.FetchInt(10);
+        healing = results.FetchInt(11);
+        damageTaken = results.FetchInt(12);
         delete results;
     }
 
@@ -489,6 +498,9 @@ int GetWhalePointsForClient(int client)
     int safeBackstabs = (backstabs > 0) ? backstabs : 0;
     int safeHeadshots = (headshots > 0) ? headshots : 0;
     int safeMarketGardenHits = (marketGardenHits > 0) ? marketGardenHits : 0;
+    int safeMedicKills = (medicKills > 0) ? medicKills : 0;
+    int safeHeavyKills = (heavyKills > 0) ? heavyKills : 0;
+    int safeAirshots = (airshots > 0) ? airshots : 0;
     int safeTotalUbers = (totalUbers > 0) ? totalUbers : 0;
     int safeDamage = (damage > 0) ? damage : 0;
     int safeDeaths = (deaths > 0) ? deaths : 0;
@@ -501,13 +513,16 @@ int GetWhalePointsForClient(int client)
     }
 
     float positive = 0.0;
-    positive += float(safeDamage) / 200.0;
+    positive += float(safeDamage) / 300.0;
     positive += float(safeHealing) / 400.0;
     positive += float(safeKills);
     positive += float(RoundToFloor(float(safeAssists) * 0.5));
     positive += float(safeBackstabs);
     positive += float(safeHeadshots);
     positive += float(safeMarketGardenHits * 5);
+    positive += float(safeMedicKills);
+    positive += float(safeHeavyKills);
+    positive += float(safeAirshots * 3);
     positive += float(safeTotalUbers * 10);
     if (positive < 0.0)
     {

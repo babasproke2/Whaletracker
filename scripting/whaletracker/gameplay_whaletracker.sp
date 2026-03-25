@@ -1,5 +1,3 @@
-#define WT_AIRSHOT_MIN_HEIGHT 170.0
-
 bool g_bPlayerTakenDirectHit[MAXPLAYERS + 1];
 bool g_bInExplosiveJump[MAXPLAYERS + 1];
 
@@ -61,6 +59,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
     int attacker = GetClientOfUserId(event.GetInt("attacker"));
     int assister = GetClientOfUserId(event.GetInt("assister"));
     int deathFlags = GetUserFlagBits(victim);
+    int victimClass = view_as<int>(TF2_GetPlayerClass(victim));
     bool attackerScoredMedicDrop = false;
 
     if (!(deathFlags & 32))
@@ -78,6 +77,11 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
         }
+
+        if (victimClass == 5)
+            g_Stats[attacker].totalMedicKills++;
+        if (victimClass == 6)
+            g_Stats[attacker].totalHeavyKills++;
 
         if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))
         {
