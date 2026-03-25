@@ -165,7 +165,7 @@ public Action Command_ShowMarketGardens(int client, int args)
         return Plugin_Handled;
     }
 
-    CPrintToChat(client, "{green}[WhaleTracker]{default} Your market gardens: {gold}%d", g_Stats[client].totalMarketGardenHits);
+    CPrintToChat(client, "{green}[WhaleTracker]{default} Market gardens: {gold}%d {default}| Airshots: {gold}%d", g_Stats[client].totalMarketGardenHits, g_Stats[client].totalAirshots);
     return Plugin_Handled;
 }
 
