@@ -154,8 +154,6 @@ public Action Command_ShowPointsMe(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChat(client, "{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Calculation: {lightgreen}((damage / 200) + (healing / 400) + (kills + floor(assists * 0.5)) + backstabs + headshots + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
-    CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
 }
