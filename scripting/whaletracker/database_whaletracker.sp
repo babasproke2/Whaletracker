@@ -482,7 +482,7 @@ public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const c
 
 void LoadClientStats(int client)
 {
-    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bStatsLoadPending[client])
+    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bStatsLoadPending[client] || g_Stats[client].loaded)
     {
         return;
     }
@@ -505,7 +505,7 @@ void LoadClientStats(int client)
 
 void LoadClientOnlineSnapshot(int client)
 {
-    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bOnlineStateLoadPending[client])
+    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bOnlineStateLoadPending[client] || g_MapStats[client].loaded)
     {
         return;
     }
@@ -542,6 +542,11 @@ public void RequestClientStateLoads(int client)
     }
 
     if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    if (g_Stats[client].loaded && g_MapStats[client].loaded)
     {
         return;
     }
@@ -733,7 +738,7 @@ bool SaveClientMapStats(int client)
     return true;
 }
 
-void QueueStatsSave(int client, int userId)
+void QueueStatsSave(int client, int userId, bool forceSync)
 {
     char query[SAVE_QUERY_MAXLEN];
     char accuracyValueSegment[512];
@@ -746,7 +751,7 @@ void QueueStatsSave(int client, int userId)
         ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers) "
         ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
         ... "%d, %d, %d, %d, %d, %d, "
-        ... "%s) "
+        ... "%d, %s) "
         ... "ON DUPLICATE KEY UPDATE "
         ... "first_seen = LEAST(first_seen, VALUES(first_seen)), "
         ... "kills = GREATEST(kills, VALUES(kills)), "
@@ -809,10 +814,10 @@ void QueueStatsSave(int client, int userId)
 
         accuracyValueSegment);
 
-    QueueSaveQuery(query, userId, false);
+    QueueSaveQuery(query, userId, forceSync);
 }
 
-bool SaveClientStats(int client, bool includeMapStats, bool forceSave)
+bool SaveClientStats(int client, bool includeMapStats, bool forceSave, bool forceSync = false)
 {
     if (!IsValidClient(client))
         return false;
@@ -846,7 +851,7 @@ bool SaveClientStats(int client, bool includeMapStats, bool forceSave)
     }
 
     int userId = GetClientUserId(client);
-    QueueStatsSave(client, userId);
+    QueueStatsSave(client, userId, forceSync);
 
     if (includeMapStats)
     {

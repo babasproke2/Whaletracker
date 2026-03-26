@@ -209,7 +209,7 @@ public void OnMapEnd()
     {
         if (IsValidClient(i) && !IsFakeClient(i))
         {
-            SaveClientStats(i, true, true);
+            SaveClientStats(i, true, true, true);
         }
     }
 
@@ -232,7 +232,7 @@ public void OnPluginEnd()
             }
 
             AccumulatePlaytime(i);
-            SaveClientStats(i, false, true);
+            SaveClientStats(i, false, true, true);
         }
 
         int now = GetTime();
