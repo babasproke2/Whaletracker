@@ -60,7 +60,9 @@ void WhaleTracker_RustJsonEscape(const char[] input, char[] output, int maxlen)
     for (int i = 0; input[i] != '\0' && outPos < maxlen - 1; i++)
     {
         char c = input[i];
-        if (c == '"' || c == '\\')
+        int ci = c;
+        if (ci < 0) ci += 256;
+        if (ci == '"' || ci == '\\')
         {
             if (outPos + 2 >= maxlen) break;
             output[outPos++] = '\\';
@@ -75,6 +77,13 @@ void WhaleTracker_RustJsonEscape(const char[] input, char[] output, int maxlen)
             continue;
         }
         if (c < 32) continue;
+        if (c > 127)
+        {
+            // Convert invalid/non-ASCII bytes to ASCII fallback to avoid invalid UTF-8 in Rust JSON transport.
+            if (outPos + 1 >= maxlen) break;
+            output[outPos++] = '?';
+            continue;
+        }
         output[outPos++] = c;
     }
     output[outPos] = '\0';

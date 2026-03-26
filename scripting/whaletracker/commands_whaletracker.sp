@@ -86,7 +86,6 @@ public Action Command_ShowPoints(int client, int args)
     {
         char colorTagUnranked[32];
         GetClientFiltersNameColorTag(target, colorTagUnranked, sizeof(colorTagUnranked));
-        CacheWhalePointsForClient(target, 0, 0, colorTagUnranked);
         CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths exceeds %d (current: %d).", colorTagUnranked, target, WHALE_POINTS_MIN_KD_SUM, combined);
         return Plugin_Handled;
     }
@@ -103,7 +102,6 @@ public Action Command_ShowPoints(int client, int args)
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
     CPrintToChat(client, "Calculation: {lightgreen}((damage / 300) + (healing / 400) + (floor(kills * 1.5 + assists * 0.5)) + backstabs + headshots + (airshots * 3) + medic kills + heavy kills + (market gardens * 5) + (ubers * 10)){default} / {axis}(deaths + (damage taken / 500)){default} * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
-    CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
 }
 
@@ -139,7 +137,6 @@ public Action Command_ShowPointsMe(int client, int args)
     {
         char colorTagUnranked[32];
         GetClientFiltersNameColorTag(target, colorTagUnranked, sizeof(colorTagUnranked));
-        CacheWhalePointsForClient(target, 0, 0, colorTagUnranked);
         CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths exceeds %d (current: %d).", colorTagUnranked, target, WHALE_POINTS_MIN_KD_SUM, combined);
         return Plugin_Handled;
     }
@@ -154,7 +151,6 @@ public Action Command_ShowPointsMe(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChat(client, "{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CacheWhalePointsForClient(target, points, rank, colorTag);
     return Plugin_Handled;
 }
 
@@ -196,17 +192,22 @@ public Action Command_ShowLeaderboard(int client, int args)
 
     int offset = (page - 1) * WHALE_LEADERBOARD_PAGE_SIZE;
 
-    char query[512];
+    char query[2048];
     Format(query, sizeof(query),
-        "SELECT c.points, "
-        ... "COALESCE(NULLIF(p.newname,''), NULLIF(c.prename,''), NULLIF(c.name,''), c.steamid), "
-        ... "COALESCE(NULLIF(c.name_color,''), 'gold') "
-        ... "FROM whaletracker_points_cache c "
-        ... "LEFT JOIN prename_rules p ON p.pattern = c.steamid "
-        ... "WHERE c.points > 0 "
-        ... "ORDER BY c.points DESC, c.steamid ASC "
+        "SELECT %s, "
+        ... "COALESCE(NULLIF(p.newname,''), NULLIF(w.cached_personaname,''), NULLIF(w.personaname,''), w.steamid), "
+        ... "COALESCE(NULLIF(f.color,''), 'gold') "
+        ... "FROM whaletracker w "
+        ... "LEFT JOIN prename_rules p ON p.pattern = w.steamid "
+        ... "LEFT JOIN filters_namecolors f ON f.steamid = w.steamid "
+        ... "WHERE (GREATEST(w.kills,0) + GREATEST(w.deaths,0)) > %d "
+        ... "ORDER BY %s DESC, w.steamid ASC "
         ... "LIMIT %d OFFSET %d",
-        WHALE_LEADERBOARD_PAGE_SIZE, offset);
+        WHALE_POINTS_SQL_EXPR,
+        WHALE_POINTS_MIN_KD_SUM,
+        WHALE_POINTS_SQL_EXPR,
+        WHALE_LEADERBOARD_PAGE_SIZE,
+        offset);
 
     DBResultSet results = SQL_Query(g_hDatabase, query);
     if (results == null)
@@ -256,14 +257,132 @@ public Action Command_ShowLeaderboard(int client, int args)
     return Plugin_Handled;
 }
 
-void CacheWhalePointsForClient(int client, int points, int rank, const char[] knownColor = "")
+void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen)
+{
+    strcopy(colorTag, maxlen, "gold");
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    if (steamId[0] == '\0')
+    {
+        return;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char query[192];
+    Format(query, sizeof(query),
+        "SELECT color FROM filters_namecolors WHERE steamid = '%s' LIMIT 1",
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results != null && SQL_HasResultSet(results) && results.FetchRow())
+    {
+        results.FetchString(0, colorTag, maxlen);
+        TrimString(colorTag);
+    }
+    delete results;
+
+    if (colorTag[0] != '\0')
+    {
+        return;
+    }
+
+    Format(query, sizeof(query),
+        "SELECT name_color FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+        escapedSteamId);
+
+    results = SQL_Query(g_hDatabase, query);
+    if (results != null && SQL_HasResultSet(results) && results.FetchRow())
+    {
+        results.FetchString(0, colorTag, maxlen);
+        TrimString(colorTag);
+    }
+    delete results;
+}
+
+void CacheWhalePointsSnapshot(const char[] steamId, int points, const char[] playerName, const char[] knownColor = "")
 {
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
         return;
     }
 
-    if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client))
+    if (steamId[0] == '\0')
+    {
+        return;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char nameColor[32];
+    if (knownColor[0] != '\0')
+    {
+        strcopy(nameColor, sizeof(nameColor), knownColor);
+    }
+    else
+    {
+        GetNameColorTagForSteamId(steamId, nameColor, sizeof(nameColor));
+    }
+
+    char escapedNameColor[64];
+    EscapeSqlString(nameColor, escapedNameColor, sizeof(escapedNameColor));
+
+    char fallbackName[MAX_NAME_LENGTH];
+    if (playerName[0] != '\0')
+    {
+        strcopy(fallbackName, sizeof(fallbackName), playerName);
+    }
+    else
+    {
+        strcopy(fallbackName, sizeof(fallbackName), steamId);
+    }
+
+    char escapedName[(MAX_NAME_LENGTH * 2) + 1];
+    EscapeSqlString(fallbackName, escapedName, sizeof(escapedName));
+
+    if (points < 0)
+    {
+        points = 0;
+    }
+
+    char query[1600];
+    Format(query, sizeof(query),
+        "INSERT INTO whaletracker_points_cache (steamid, points, name, name_color, prename, updated_at) "
+        ... "VALUES ('%s', %d, '%s', '%s', COALESCE((SELECT newname FROM prename_rules WHERE pattern = '%s' LIMIT 1), ''), %d) "
+        ... "ON DUPLICATE KEY UPDATE "
+        ... "points = VALUES(points), "
+        ... "name = VALUES(name), "
+        ... "name_color = VALUES(name_color), "
+        ... "prename = COALESCE((SELECT newname FROM prename_rules WHERE pattern = '%s' LIMIT 1), prename), "
+        ... "updated_at = VALUES(updated_at)",
+        escapedSteamId,
+        points,
+        escapedName,
+        escapedNameColor,
+        escapedSteamId,
+        GetTime(),
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] Failed to update points cache: %s | Query: %s", error, query);
+        return;
+    }
+    delete results;
+}
+
+void CacheWhalePointsOnDisconnect(int client)
+{
+    if (client <= 0 || client > MaxClients || IsFakeClient(client))
     {
         return;
     }
@@ -274,66 +393,14 @@ void CacheWhalePointsForClient(int client, int points, int rank, const char[] kn
         return;
     }
 
-    char escapedSteamId[STEAMID64_LEN * 2];
-    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
-
-    char nameColor[32];
-    if (knownColor[0] != '\0')
-    {
-        strcopy(nameColor, sizeof(nameColor), knownColor);
-    }
-    else
-    {
-        GetClientFiltersNameColorTag(client, nameColor, sizeof(nameColor));
-    }
-
-    char escapedNameColor[64];
-    EscapeSqlString(nameColor, escapedNameColor, sizeof(escapedNameColor));
-
     char clientName[MAX_NAME_LENGTH];
     GetClientName(client, clientName, sizeof(clientName));
 
-    char escapedName[(MAX_NAME_LENGTH * 2) + 1];
-    EscapeSqlString(clientName, escapedName, sizeof(escapedName));
+    char colorTag[32];
+    GetNameColorTagForSteamId(g_Stats[client].steamId, colorTag, sizeof(colorTag));
 
-    if (points < 0)
-    {
-        points = 0;
-    }
-
-    if (rank < 0)
-    {
-        rank = 0;
-    }
-
-    char query[1600];
-    Format(query, sizeof(query),
-        "INSERT INTO whaletracker_points_cache (steamid, points, rank, name, name_color, prename, updated_at) "
-        ... "VALUES ('%s', %d, %d, '%s', '%s', COALESCE((SELECT newname FROM prename_rules WHERE pattern = '%s' LIMIT 1), ''), %d) "
-        ... "ON DUPLICATE KEY UPDATE "
-        ... "points = VALUES(points), "
-        ... "rank = VALUES(rank), "
-        ... "name = VALUES(name), "
-        ... "name_color = VALUES(name_color), "
-        ... "prename = COALESCE((SELECT newname FROM prename_rules WHERE pattern = '%s' LIMIT 1), prename), "
-        ... "updated_at = VALUES(updated_at)",
-        escapedSteamId,
-        points,
-        rank,
-        escapedName,
-        escapedNameColor,
-        escapedSteamId,
-        GetTime(),
-        escapedSteamId);
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
-        LogError("[WhaleTracker] Failed to update points cache: %s | Query: %s", error, query);
-        return;
-    }
-    delete results;
+    int points = GetWhalePointsForStats(g_Stats[client]);
+    CacheWhalePointsSnapshot(g_Stats[client].steamId, points, clientName, colorTag);
 }
 
 bool IsValidClient(int client)
@@ -383,22 +450,77 @@ void GetClientFiltersNameColorTag(int client, char[] colorTag, int maxlen)
     }
 
     // Fallback: use WhaleTracker points cache color when filters table has no row.
-    Format(query, sizeof(query),
-        "SELECT name_color FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
-
-    results = SQL_Query(g_hDatabase, query);
-    if (results != null && SQL_HasResultSet(results) && results.FetchRow())
-    {
-        results.FetchString(0, colorTag, maxlen);
-        TrimString(colorTag);
-    }
-    delete results;
+    GetNameColorTagForSteamId(g_Stats[client].steamId, colorTag, maxlen);
 
     if (colorTag[0] == '\0')
     {
         strcopy(colorTag, maxlen, "gold");
     }
+}
+
+int GetWhalePointsForStats(const WhaleStats stats)
+{
+    int safeKills = (stats.kills > 0) ? stats.kills : 0;
+    int safeAssists = (stats.totalAssists > 0) ? stats.totalAssists : 0;
+    int safeBackstabs = (stats.totalBackstabs > 0) ? stats.totalBackstabs : 0;
+    int safeHeadshots = (stats.totalHeadshots > 0) ? stats.totalHeadshots : 0;
+    int safeMarketGardenHits = (stats.totalMarketGardenHits > 0) ? stats.totalMarketGardenHits : 0;
+    int safeMedicKills = (stats.totalMedicKills > 0) ? stats.totalMedicKills : 0;
+    int safeHeavyKills = (stats.totalHeavyKills > 0) ? stats.totalHeavyKills : 0;
+    int safeAirshots = (stats.totalAirshots > 0) ? stats.totalAirshots : 0;
+    int safeTotalUbers = (stats.totalUbers > 0) ? stats.totalUbers : 0;
+    int safeDamage = (stats.totalDamage > 0) ? stats.totalDamage : 0;
+    int safeDeaths = (stats.deaths > 0) ? stats.deaths : 0;
+    int safeHealing = (stats.totalHealing > 0) ? stats.totalHealing : 0;
+    int safeDamageTaken = (stats.totalDamageTaken > 0) ? stats.totalDamageTaken : 0;
+
+    if ((safeKills + safeDeaths) <= WHALE_POINTS_MIN_KD_SUM)
+    {
+        return 0;
+    }
+
+    float positive = 0.0;
+    positive += float(safeDamage) / 300.0;
+    positive += float(safeHealing) / 400.0;
+    positive += float(RoundToFloor(float(safeKills) * 1.5 + float(safeAssists) * 0.5));
+    positive += float(safeBackstabs);
+    positive += float(safeHeadshots);
+    positive += float(safeMarketGardenHits * 5);
+    positive += float(safeMedicKills);
+    positive += float(safeHeavyKills);
+    positive += float(safeAirshots * 3);
+    positive += float(safeTotalUbers * 10);
+    if (positive < 0.0)
+    {
+        positive = 0.0;
+    }
+    if (positive > 2147483000.0)
+    {
+        positive = 2147483000.0;
+    }
+
+    int denominatorBase = RoundToFloor(safeDeaths + safeDamageTaken / 500.0);
+    if (denominatorBase < 1)
+    {
+        denominatorBase = 1;
+    }
+
+    float pointsFloat = (positive / float(denominatorBase)) * 10000.0;
+    if (pointsFloat < 0.0)
+    {
+        pointsFloat = 0.0;
+    }
+    if (pointsFloat > 2147483000.0)
+    {
+        pointsFloat = 2147483000.0;
+    }
+
+    int points = RoundToCeil(pointsFloat);
+    if (points < 0)
+    {
+        points = 0;
+    }
+    return points;
 }
 
 int GetWhalePointsForClient(int client)
@@ -491,68 +613,21 @@ int GetWhalePointsForClient(int client)
         delete results;
     }
 
-    int safeKills = (kills > 0) ? kills : 0;
-    int safeAssists = (assists > 0) ? assists : 0;
-    int safeBackstabs = (backstabs > 0) ? backstabs : 0;
-    int safeHeadshots = (headshots > 0) ? headshots : 0;
-    int safeMarketGardenHits = (marketGardenHits > 0) ? marketGardenHits : 0;
-    int safeMedicKills = (medicKills > 0) ? medicKills : 0;
-    int safeHeavyKills = (heavyKills > 0) ? heavyKills : 0;
-    int safeAirshots = (airshots > 0) ? airshots : 0;
-    int safeTotalUbers = (totalUbers > 0) ? totalUbers : 0;
-    int safeDamage = (damage > 0) ? damage : 0;
-    int safeDeaths = (deaths > 0) ? deaths : 0;
-    int safeHealing = (healing > 0) ? healing : 0;
-    int safeDamageTaken = (damageTaken > 0) ? damageTaken : 0;
-
-    if ((safeKills + safeDeaths) <= WHALE_POINTS_MIN_KD_SUM)
-    {
-        return 0;
-    }
-
-    float positive = 0.0;
-    positive += float(safeDamage) / 300.0;
-    positive += float(safeHealing) / 400.0;
-    positive += float(safeKills);
-    positive += float(RoundToFloor(float(safeAssists) * 0.5));
-    positive += float(safeBackstabs);
-    positive += float(safeHeadshots);
-    positive += float(safeMarketGardenHits * 5);
-    positive += float(safeMedicKills);
-    positive += float(safeHeavyKills);
-    positive += float(safeAirshots * 3);
-    positive += float(safeTotalUbers * 10);
-    if (positive < 0.0)
-    {
-        positive = 0.0;
-    }
-    if (positive > 2147483000.0)
-    {
-        positive = 2147483000.0;
-    }
-
-    int denominatorBase = RoundToFloor(safeDeaths + safeDamageTaken / 500.0);
-    if (denominatorBase < 1)
-    {
-        denominatorBase = 1;
-    }
-
-    float pointsFloat = (positive / float(denominatorBase)) * 10000.0;
-    if (pointsFloat < 0.0)
-    {
-        pointsFloat = 0.0;
-    }
-    if (pointsFloat > 2147483000.0)
-    {
-        pointsFloat = 2147483000.0;
-    }
-
-    int points = RoundToCeil(pointsFloat);
-    if (points < 0)
-    {
-        points = 0;
-    }
-    return points;
+    WhaleStats pointStats;
+    pointStats.kills = kills;
+    pointStats.deaths = deaths;
+    pointStats.totalAssists = assists;
+    pointStats.totalBackstabs = backstabs;
+    pointStats.totalHeadshots = headshots;
+    pointStats.totalMedicKills = medicKills;
+    pointStats.totalHeavyKills = heavyKills;
+    pointStats.totalAirshots = airshots;
+    pointStats.totalMarketGardenHits = marketGardenHits;
+    pointStats.totalUbers = totalUbers;
+    pointStats.totalDamage = damage;
+    pointStats.totalHealing = healing;
+    pointStats.totalDamageTaken = damageTaken;
+    return GetWhalePointsForStats(pointStats);
 }
 
 void EnsureClientStatsLoadedForPoints(int client)
@@ -578,7 +653,7 @@ void EnsureClientStatsLoadedForPoints(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
+        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
         ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
@@ -600,15 +675,17 @@ void EnsureClientStatsLoadedForPoints(int client)
         g_Stats[client].totalMedicDrops = results.FetchInt(6);
         g_Stats[client].totalUberDrops = results.FetchInt(7);
         g_Stats[client].totalAirshots = results.FetchInt(8);
-        g_Stats[client].totalMarketGardenHits = results.FetchInt(9);
-        g_Stats[client].totalHeadshots = results.FetchInt(10);
-        g_Stats[client].totalBackstabs = results.FetchInt(11);
-        g_Stats[client].bestKillstreak = results.FetchInt(12);
-        g_Stats[client].totalAssists = results.FetchInt(13);
-        g_Stats[client].playtime = results.FetchInt(14);
-        g_Stats[client].totalDamage = results.FetchInt(15);
-        g_Stats[client].totalDamageTaken = results.FetchInt(16);
-        g_Stats[client].lastSeen = results.FetchInt(17);
+        g_Stats[client].totalMedicKills = results.FetchInt(9);
+        g_Stats[client].totalHeavyKills = results.FetchInt(10);
+        g_Stats[client].totalMarketGardenHits = results.FetchInt(11);
+        g_Stats[client].totalHeadshots = results.FetchInt(12);
+        g_Stats[client].totalBackstabs = results.FetchInt(13);
+        g_Stats[client].bestKillstreak = results.FetchInt(14);
+        g_Stats[client].totalAssists = results.FetchInt(15);
+        g_Stats[client].playtime = results.FetchInt(16);
+        g_Stats[client].totalDamage = results.FetchInt(17);
+        g_Stats[client].totalDamageTaken = results.FetchInt(18);
+        g_Stats[client].lastSeen = results.FetchInt(19);
         g_Stats[client].loaded = true;
     }
 

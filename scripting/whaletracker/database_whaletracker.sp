@@ -487,7 +487,7 @@ void LoadClientStats(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
+        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
         ... "FROM whaletracker WHERE steamid = '%s'", steamId);
 
     g_hDatabase.Query(WhaleTracker_LoadCallback, query, client);
@@ -609,10 +609,10 @@ void QueueStatsSave(int client, int userId)
 
     Format(query, sizeof(query),
         "INSERT INTO whaletracker "
-        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, "
+        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, "
         ... "best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen, "
         ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers) "
-        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
         ... "%d, %d, %d, %d, %d, %d, "
         ... "%s) "
         ... "ON DUPLICATE KEY UPDATE "
@@ -621,6 +621,7 @@ void QueueStatsSave(int client, int userId)
         ... "deaths = GREATEST(deaths, VALUES(deaths)), "
         ... "healing = GREATEST(healing, VALUES(healing)), "
         ... "total_ubers = GREATEST(total_ubers, VALUES(total_ubers)), "
+        ... "best_ubers_life = GREATEST(best_ubers_life, VALUES(best_ubers_life)), "
         ... "medic_drops = GREATEST(medic_drops, VALUES(medic_drops)), "
         ... "uber_drops = GREATEST(uber_drops, VALUES(uber_drops)), "
         ... "airshots = GREATEST(airshots, VALUES(airshots)), "

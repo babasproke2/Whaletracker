@@ -365,6 +365,7 @@ public void OnClientDisconnect(int client)
 
     AccumulatePlaytime(client);
     SaveClientStats(client, true, true);
+    CacheWhalePointsOnDisconnect(client);
     RemoveOnlineStats(client);
     ResetAllStats(client);
     g_KillSaveCounter[client] = 0;
@@ -406,15 +407,15 @@ public void OnClientPostAdminCheck(int client)
     QueryPointsCacheJoinMessage(client);
 }
 
-void AnnounceDefaultJoin(int client)
+/*void AnnounceDefaultJoin(int client)
 {
     if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client))
     {
         return;
     }
 
-    CPrintToChatAll("%N joined the game", client);
-}
+    //CPrintToChatAll("%N joined the game", client);
+}*/
 
 void QueryPointsCacheJoinMessage(int client)
 {
@@ -425,14 +426,14 @@ void QueryPointsCacheJoinMessage(int client)
 
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
-        AnnounceDefaultJoin(client);
+        //AnnounceDefaultJoin(client);
         return;
     }
 
     EnsureClientSteamId(client);
     if (g_Stats[client].steamId[0] == '\0')
     {
-        AnnounceDefaultJoin(client);
+        //AnnounceDefaultJoin(client);
         return;
     }
 
@@ -441,7 +442,7 @@ void QueryPointsCacheJoinMessage(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT points, name_color, name, prename, rank FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+        "SELECT points, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
     g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, GetClientUserId(client));
 }
@@ -457,34 +458,31 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to query points cache for join message: %s", error);
-        AnnounceDefaultJoin(client);
-        return;
     }
 
-    if (results == null || !results.FetchRow())
-    {
-        AnnounceDefaultJoin(client);
-        return;
-    }
-
-    int points = results.FetchInt(0);
-    int rank = results.FetchInt(4);
-
-    if (points < 0)
-    {
-        points = 0;
-    }
-
+    int points = 0;
     char colorTag[32];
-    results.FetchString(1, colorTag, sizeof(colorTag));
-    TrimString(colorTag);
-
     char cachedName[128];
     char cachedPrename[128];
-    results.FetchString(2, cachedName, sizeof(cachedName));
-    results.FetchString(3, cachedPrename, sizeof(cachedPrename));
-    TrimString(cachedName);
-    TrimString(cachedPrename);
+    colorTag[0] = '\0';
+    cachedName[0] = '\0';
+    cachedPrename[0] = '\0';
+
+    if (results != null && results.FetchRow())
+    {
+        points = results.FetchInt(0);
+        if (points < 0)
+        {
+            points = 0;
+        }
+
+        results.FetchString(1, colorTag, sizeof(colorTag));
+        results.FetchString(2, cachedName, sizeof(cachedName));
+        results.FetchString(3, cachedPrename, sizeof(cachedPrename));
+        TrimString(colorTag);
+        TrimString(cachedName);
+        TrimString(cachedPrename);
+    }
 
     char displayName[128];
     if (cachedPrename[0] != '\0')
@@ -500,26 +498,24 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         GetClientName(client, displayName, sizeof(displayName));
     }
 
-    // Always prefer live filters DB color if available.
-    GetClientFiltersNameColorTag(client, colorTag, sizeof(colorTag));
+    if (colorTag[0] == '\0')
+    {
+        GetClientFiltersNameColorTag(client, colorTag, sizeof(colorTag));
+    }
 
-    // Keep join announcement and cached values in sync with live formula/rank.
-    int livePoints = GetWhalePointsForClient(client);
-    int liveRank = GetWhalePointsRankForClient(client);
-    if (livePoints < 0)
+    int rank = GetWhalePointsRankForClient(client);
+    if (rank < 0)
     {
-        livePoints = 0;
+        rank = 0;
     }
-    if (liveRank < 0)
+
+    if (rank > 0 && points <= 0)
     {
-        liveRank = 0;
-    }
-    // Log cached vs live for debugging if enabled
-    if (livePoints != points || liveRank != rank)
-    {
-        points = livePoints;
-        rank = liveRank;
-        CacheWhalePointsForClient(client, points, rank, colorTag);
+        points = GetWhalePointsForClient(client);
+        if (points < 0)
+        {
+            points = 0;
+        }
     }
 
     if (rank > 0)
