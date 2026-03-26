@@ -74,14 +74,13 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
             ApplyKillStats(g_Stats[attacker], backstab, (countHeadshotOnDeath && headshot), medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, (countHeadshotOnDeath && headshot), medicDrop);
+            if (victimClass == TF_CLASS_MEDIC)
+                g_Stats[attacker].totalMedicKills++;
+            if (victimClass == TF_CLASS_HEAVY)
+                g_Stats[attacker].totalHeavyKills++;
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
         }
-
-        if (victimClass == 5)
-            g_Stats[attacker].totalMedicKills++;
-        if (victimClass == 6)
-            g_Stats[attacker].totalHeavyKills++;
 
         if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))
         {
