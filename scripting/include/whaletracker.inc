@@ -1373,7 +1373,7 @@ void ResetLifeCounters(WhaleStats stats)
     stats.currentUbersLife = 0;
 }
 
-void ApplyKillStats(WhaleStats stats, bool backstab, bool headshot, bool medicDrop)
+void ApplyKillStats(WhaleStats stats, bool backstab, bool medicDrop)
 {
     stats.kills++;
 
@@ -1387,10 +1387,6 @@ void ApplyKillStats(WhaleStats stats, bool backstab, bool headshot, bool medicDr
     if (backstab)
     {
         stats.totalBackstabs++;
-    }
-    if (headshot)
-    {
-        stats.totalHeadshots++;
     }
     if (medicDrop)
     {

@@ -68,7 +68,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
         {
             int custom = event.GetInt("customkill");
             bool backstab = (custom == TF_CUSTOM_BACKSTAB);
-            bool headshot = (custom == TF_CUSTOM_HEADSHOT || custom == TF_CUSTOM_HEADSHOT_DECAPITATION);
             bool medicDrop = IsMedicDrop(victim);
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
