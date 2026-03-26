@@ -541,7 +541,13 @@ public void RequestClientStateLoads(int client)
         return;
     }
 
-    if (!AreClientCookiesCached(client) || !g_bDatabaseReady || g_hDatabase == null)
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
     {
         return;
     }

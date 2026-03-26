@@ -339,7 +339,8 @@ int GetWeaponDefIndexSafe(int weapon)
 
 bool IsMarketGardenerWeapon(int weapon)
 {
-    return GetWeaponDefIndexSafe(weapon) == WT_MARKET_GARDENER_DEF_INDEX;
+    int def = GetWeaponDefIndexSafe(weapon);
+    return def == WT_MARKET_GARDENER_DEF_INDEX || def == WT_HANDSHAKE_DEF_INDEX;
 }
 
 bool IsMarketGardenerHit(int attacker, int weapon)

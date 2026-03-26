@@ -1028,7 +1028,7 @@ void FinalizeCurrentMatch(bool shuttingDown)
 
     for (int i = 1; i <= MaxClients; i++)
     {
-        if (!IsClientInGame(i) || IsFakeClient(i))
+        if (!IsValidClient(i) || IsFakeClient(i))
             continue;
 
         AccumulatePlaytime(i);
@@ -1042,7 +1042,14 @@ void FinalizeCurrentMatch(bool shuttingDown)
         AppendSnapshotToStorage(g_MapStats[i].steamId, data);
 
         char name[MAX_NAME_LENGTH];
-        GetClientName(i, name, sizeof(name));
+        if (IsClientInGame(i))
+        {
+            GetClientName(i, name, sizeof(name));
+        }
+        else if (!GetStoredMatchPlayerName(g_MapStats[i].steamId, name, sizeof(name)))
+        {
+            strcopy(name, sizeof(name), g_MapStats[i].steamId);
+        }
         RememberMatchPlayerName(g_MapStats[i].steamId, name);
     }
 

@@ -207,7 +207,7 @@ public void OnMapEnd()
 {
     for (int i = 1; i <= MaxClients; i++)
     {
-        if (IsClientInGame(i) && !IsFakeClient(i))
+        if (IsValidClient(i) && !IsFakeClient(i))
         {
             SaveClientStats(i, true, true);
         }
@@ -226,7 +226,7 @@ public void OnPluginEnd()
         RefreshHostAddress();
         for (int i = 1; i <= MaxClients; i++)
         {
-            if (!IsClientInGame(i) || IsFakeClient(i))
+            if (!IsValidClient(i) || IsFakeClient(i))
             {
                 continue;
             }
@@ -278,7 +278,7 @@ public void OnPluginEnd()
 
         for (int i = 1; i <= MaxClients; i++)
         {
-            if (!IsClientInGame(i) || IsFakeClient(i))
+            if (!IsValidClient(i) || IsFakeClient(i))
             {
                 continue;
             }
