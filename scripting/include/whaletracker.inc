@@ -738,21 +738,6 @@ bool WhaleTracker_IsNativeAvailable(const char[] nativeName)
     return GetFeatureStatus(FeatureType_Native, nativeName) == FeatureStatus_Available;
 }
 
-bool WhaleTracker_ShouldUseSdkHooks()
-{
-    if (g_hEnableSdkHooks == null || !g_hEnableSdkHooks.BoolValue)
-    {
-        return false;
-    }
-
-    return WhaleTracker_IsNativeAvailable("SDKHook") && WhaleTracker_IsNativeAvailable("SDKUnhook");
-}
-
-bool WhaleTracker_ShouldUseDamageHeadshots()
-{
-    return (g_hHeadshotMode == null || g_hHeadshotMode.IntValue == WT_HEADSHOT_MODE_DAMAGE);
-}
-
 bool WhaleTracker_ShouldUseMatchLogs()
 {
     return (g_hEnableMatchLogs != null && g_hEnableMatchLogs.BoolValue);
@@ -761,11 +746,6 @@ bool WhaleTracker_ShouldUseMatchLogs()
 bool WhaleTracker_UseManualPublicIp()
 {
     return (g_hPublicIpMode != null && g_hPublicIpMode.IntValue == WT_PUBLIC_IP_MODE_MANUAL);
-}
-
-bool WhaleTracker_ShouldUseMedicDropScan()
-{
-    return (g_hMedicDropMode != null && g_hMedicDropMode.IntValue == WT_MEDICDROP_MODE_SCAN);
 }
 
 bool WhaleTracker_UseDeferredSavePump()
@@ -868,9 +848,6 @@ void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[] steamI
     if (!g_sCurrentLogId[0] || steamId[0] == '\0')
         return;
 
-    if (GetConVarInt(g_hDebugMinimalStats) < 1)
-        return;
-
     char escapedName[256];
     EscapeSqlString(name, escapedName, sizeof(escapedName));
 
@@ -948,9 +925,6 @@ void InsertMatchLogRecord(int endTime, int duration, int participantCount, bool 
         return;
 
     if (!g_sCurrentLogId[0])
-        return;
-
-    if (GetConVarInt(g_hDebugMinimalStats) < 1)
         return;
 
     char mapName[128];

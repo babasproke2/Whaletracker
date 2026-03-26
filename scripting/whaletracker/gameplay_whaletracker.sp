@@ -69,11 +69,10 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             int custom = event.GetInt("customkill");
             bool backstab = (custom == TF_CUSTOM_BACKSTAB);
             bool headshot = (custom == TF_CUSTOM_HEADSHOT || custom == TF_CUSTOM_HEADSHOT_DECAPITATION);
-            bool countHeadshotOnDeath = (!WhaleTracker_ShouldUseSdkHooks() || !WhaleTracker_ShouldUseDamageHeadshots());
             bool medicDrop = IsMedicDrop(victim);
 
-            ApplyKillStats(g_Stats[attacker], backstab, (countHeadshotOnDeath && headshot), medicDrop);
-            ApplyKillStats(g_MapStats[attacker], backstab, (countHeadshotOnDeath && headshot), medicDrop);
+            ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
+            ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
             if (victimClass == TF_CLASS_MEDIC)
                 g_Stats[attacker].totalMedicKills++;
             if (victimClass == TF_CLASS_HEAVY)
@@ -105,9 +104,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom)
 {
-    if (!WhaleTracker_ShouldUseSdkHooks())
-        return Plugin_Continue;
-
     if (attacker == victim)
         return Plugin_Continue;
 
@@ -133,7 +129,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
     }
 
     bool isHeadshot = (damagecustom == TF_CUSTOM_HEADSHOT || damagecustom == TF_CUSTOM_HEADSHOT_DECAPITATION);
-    if (WhaleTracker_ShouldUseDamageHeadshots() && isHeadshot && IsValidClient(attacker) && !IsFakeClient(attacker))
+    if (isHeadshot && IsValidClient(attacker) && !IsFakeClient(attacker))
     {
         RecordHeadshotEvent(attacker);
     }
@@ -245,31 +241,7 @@ bool IsMedicDrop(int victim)
         return false;
 
     int medigun = -1;
-    if (WhaleTracker_ShouldUseMedicDropScan())
-    {
-        if (!HasEntProp(victim, Prop_Send, "m_hMyWeapons"))
-            return false;
-
-        int maxWeapons = GetEntPropArraySize(victim, Prop_Send, "m_hMyWeapons");
-        char classname[64];
-        for (int i = 0; i < maxWeapons; i++)
-        {
-            int weapon = GetEntPropEnt(victim, Prop_Send, "m_hMyWeapons", i);
-            if (weapon <= MaxClients || !IsValidEntity(weapon))
-                continue;
-
-            GetEntityClassname(weapon, classname, sizeof(classname));
-            if (StrContains(classname, "medigun", false) != -1)
-            {
-                medigun = weapon;
-                break;
-            }
-        }
-    }
-    else
-    {
-        medigun = GetPlayerWeaponSlot(victim, 1);
-    }
+    medigun = GetPlayerWeaponSlot(victim, 1);
 
     if (medigun <= MaxClients || !IsValidEntity(medigun))
         return false;

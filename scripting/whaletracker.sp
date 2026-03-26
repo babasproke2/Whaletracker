@@ -145,13 +145,9 @@ ConVar g_CvarDatabase = null;
 ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hGameName = null;
 ConVar g_hGameUrl = null;
-ConVar g_hDebugMinimalStats = null;
-ConVar g_hEnableSdkHooks = null;
-ConVar g_hHeadshotMode = null;
 ConVar g_hEnableMatchLogs = null;
 ConVar g_hPublicIpMode = null;
 ConVar g_hPublicIpManual = null;
-ConVar g_hMedicDropMode = null;
 ConVar g_hDeferredSavePump = null;
 bool g_bDatabaseReady = false;
 

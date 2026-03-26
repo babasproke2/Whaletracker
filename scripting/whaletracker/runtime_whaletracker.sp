@@ -24,36 +24,6 @@ public void OnPluginStart()
     g_hGameName = CreateConVar("sm_whaletracker_game", "TF2", "Game label stored in WhaleTracker server snapshots.");
     g_hGameUrl = CreateConVar("sm_whaletracker_game_url", "440", "Steam store app ID used for WhaleTracker server snapshots.");
 
-    g_hDebugMinimalStats = CreateConVar(
-        "sm_whaletracker_debug_minimal",
-        "0",
-        "Limit WhaleTracker stat tracking to core metrics for debugging crashes (0 = off, 1 = on)",
-        FCVAR_NONE,
-        true,
-        0.0,
-        true,
-        1.0
-    );
-    g_hEnableSdkHooks = CreateConVar(
-        "sm_whaletracker_enable_sdkhooks",
-        "1",
-        "Enable SDKHooks-based damage tracking (1 = enabled, 0 = disabled).",
-        FCVAR_NONE,
-        true,
-        0.0,
-        true,
-        1.0
-    );
-    g_hHeadshotMode = CreateConVar(
-        "sm_whaletracker_headshot_mode",
-        "0",
-        "Headshot tracking mode (0 = damage hook, 1 = player_death customkill).",
-        FCVAR_NONE,
-        true,
-        0.0,
-        true,
-        1.0
-    );
     g_hEnableMatchLogs = CreateConVar(
         "sm_whaletracker_enable_matchlogs",
         "1",
@@ -78,16 +48,6 @@ public void OnPluginStart()
         "sm_whaletracker_public_ip",
         "",
         "Manual public server IP used when sm_whaletracker_public_ip_mode is 1."
-    );
-    g_hMedicDropMode = CreateConVar(
-        "sm_whaletracker_medicdrop_mode",
-        "0",
-        "Medic drop detection mode (0 = medigun slot, 1 = weapon scan by classname).",
-        FCVAR_NONE,
-        true,
-        0.0,
-        true,
-        1.0
     );
     g_hDeferredSavePump = CreateConVar(
         "sm_whaletracker_deferred_save_pump",
@@ -332,11 +292,10 @@ public void OnPluginEnd()
 
     for (int i = 1; i <= MaxClients; i++)
     {
-        if (WhaleTracker_ShouldUseSdkHooks() && IsClientInGame(i) && !IsFakeClient(i))
+        if (IsClientInGame(i) && !IsFakeClient(i))
         {
             SDKUnhook(i, SDKHook_OnTakeDamage, OnTakeDamage);
         }
-
     }
 }
 
@@ -344,10 +303,7 @@ public void OnClientPutInServer(int client)
 {
     if (IsFakeClient(client))
     {
-        if (WhaleTracker_ShouldUseSdkHooks())
-        {
-            SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-        }
+        SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
         return;
     }
 
@@ -383,7 +339,7 @@ public void OnClientPutInServer(int client)
         RememberMatchPlayerName(steamId, name);
     }
 
-    if (WhaleTracker_ShouldUseSdkHooks() && IsValidClient(client) && IsClientInGame(client))
+    if (IsValidClient(client) && IsClientInGame(client))
     {
         SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
     }
@@ -407,17 +363,14 @@ public void OnClientDisconnect(int client)
 {
     if (IsFakeClient(client))
     {
-        if (WhaleTracker_ShouldUseSdkHooks())
-        {
-            SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-        }
+        SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
         return;
     }
 
-        if (WhaleTracker_ShouldUseSdkHooks() && IsClientInGame(client))
-        {
-            SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-        }
+    if (IsClientInGame(client))
+    {
+        SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+    }
 
     AccumulatePlaytime(client);
     SaveClientStats(client, true, true);
