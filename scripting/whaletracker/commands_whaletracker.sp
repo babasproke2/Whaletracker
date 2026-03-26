@@ -779,7 +779,7 @@ public any Native_WhaleTracker_GetCumulativeKills(Handle plugin, int numParams)
 public any Native_WhaleTracker_AreStatsLoaded(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
-    return (client > 0 && client <= MaxClients && g_Stats[client].loaded);
+    return WhaleTracker_AreClientStatsReady(client);
 }
 
 public any Native_WhaleTracker_GetWhalePoints(Handle plugin, int numParams)

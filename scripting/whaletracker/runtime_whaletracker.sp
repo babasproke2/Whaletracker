@@ -160,7 +160,6 @@ public void OnPluginStart()
         CloseHandle(g_hPeriodicSaveTimer);
     }
     g_hPeriodicSaveTimer = CreateTimer(30.0, Timer_GlobalSave, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-    ClearOnlineStats();
 
     g_hAirshotForward = CreateGlobalForward("WhaleTracker_OnAirshot", ET_Ignore, Param_Cell, Param_Cell);
 
@@ -173,10 +172,7 @@ public void OnPluginStart()
         if (IsClientInGame(i))
         {
             OnClientPutInServer(i);
-            if (AreClientCookiesCached(i))
-            {
-                LoadClientStats(i);
-            }
+            RequestClientStateLoads(i);
         }
     }
 }
@@ -224,12 +220,78 @@ public void OnMapEnd()
 
 public void OnPluginEnd()
 {
-    g_bShuttingDown = true;
+    if (g_bDatabaseReady && g_hDatabase != null)
+    {
+        RefreshCurrentOnlineMapName();
+        RefreshHostAddress();
+        for (int i = 1; i <= MaxClients; i++)
+        {
+            if (!IsClientInGame(i) || IsFakeClient(i))
+            {
+                continue;
+            }
+
+            AccumulatePlaytime(i);
+            SaveClientStats(i, false, true);
+        }
+
+        int now = GetTime();
+        float engineNow = GetEngineTime();
+        int playerCount = GetClientCount(false);
+        int visibleMax = GetMaxHumanPlayers();
+        if (g_hVisibleMaxPlayers != null)
+        {
+            int conVarValue = GetConVarInt(g_hVisibleMaxPlayers);
+            if (conVarValue > 0 && visibleMax > conVarValue)
+            {
+                visibleMax = conVarValue;
+            }
+        }
+
+        char escapedMapName[256];
+        char mapName[128];
+        if (g_sOnlineMapName[0])
+        {
+            strcopy(mapName, sizeof(mapName), g_sOnlineMapName);
+        }
+        else
+        {
+            strcopy(mapName, sizeof(mapName), "unknown");
+        }
+        SQL_EscapeString(g_hDatabase, mapName, escapedMapName, sizeof(escapedMapName));
+
+        char escapedHostIp[64];
+        char hostIp[64];
+        if (g_sPublicHostIp[0])
+        {
+            strcopy(hostIp, sizeof(hostIp), g_sPublicHostIp);
+        }
+        else if (g_sHostIp[0])
+        {
+            strcopy(hostIp, sizeof(hostIp), g_sHostIp);
+        }
+        else
+        {
+            strcopy(hostIp, sizeof(hostIp), "0.0.0.0");
+        }
+        SQL_EscapeString(g_hDatabase, hostIp, escapedHostIp, sizeof(escapedHostIp));
+
+        for (int i = 1; i <= MaxClients; i++)
+        {
+            if (!IsClientInGame(i) || IsFakeClient(i))
+            {
+                continue;
+            }
+
+            QueueClientOnlineSnapshot(i, now, engineNow, playerCount, visibleMax, escapedMapName, escapedHostIp, true);
+        }
+    }
 
     FinalizeCurrentMatch(true);
 
     FlushSaveQueueSync();
     WhaleTracker_RustShutdown();
+    g_bShuttingDown = true;
 
     if (g_hOnlineTimer != null)
     {
@@ -257,8 +319,6 @@ public void OnPluginEnd()
         delete g_hAirshotForward;
         g_hAirshotForward = null;
     }
-
-    ClearOnlineStats();
 
     if (g_SaveQueue != null)
     {
@@ -329,12 +389,8 @@ public void OnClientPutInServer(int client)
     }
     TouchClientLastSeen(client);
 
-    if (AreClientCookiesCached(client))
-    {
-        LoadClientStats(client);
-    }
-
-    g_bTrackEligible[client] = (GetClientTeam(client) > 1);
+    RequestClientStateLoads(client);
+    WhaleTracker_RefreshClientTrackingState(client);
     g_iDamageGate[client] = 0;
 }
 
@@ -343,7 +399,7 @@ public void OnClientCookiesCached(int client)
     if (IsFakeClient(client))
         return;
 
-    LoadClientStats(client);
+    RequestClientStateLoads(client);
     TouchClientLastSeen(client);
 }
 

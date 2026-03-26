@@ -87,6 +87,7 @@ enum WeaponCategory
 #define WEAPON_CATEGORY_COUNT 8
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
+forward void RequestClientStateLoads(int client);
 
 enum struct WhaleStats
 {
@@ -133,6 +134,8 @@ WhaleStats g_MapStats[MAXPLAYERS + 1];
 int g_KillSaveCounter[MAXPLAYERS + 1];
 bool g_bStatsDirty[MAXPLAYERS + 1];
 Handle g_hPeriodicSaveTimer = null;
+bool g_bStatsLoadPending[MAXPLAYERS + 1];
+bool g_bOnlineStateLoadPending[MAXPLAYERS + 1];
 bool g_bTrackEligible[MAXPLAYERS + 1];
 int g_iDamageGate[MAXPLAYERS + 1];
 
@@ -213,7 +216,7 @@ char g_SaveQueryBuffers[MAX_CONCURRENT_SAVE_QUERIES][SAVE_QUERY_MAXLEN];
 int g_SaveQueryUserIds[MAX_CONCURRENT_SAVE_QUERIES];
 bool g_SaveQuerySlotUsed[MAX_CONCURRENT_SAVE_QUERIES];
 
-#include <whaletracker>
+#include "include/whaletracker.inc"
 #include "whaletracker/motd_whaletracker.sp"
 #undef REQUIRE_EXTENSIONS
 #include "whaletracker/rust_sql_outlet_whaletracker.sp"

@@ -94,9 +94,16 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`healing` INTEGER DEFAULT 0,"
         ... "`headshots` INTEGER DEFAULT 0,"
         ... "`backstabs` INTEGER DEFAULT 0,"
+        ... "`medic_drops` INTEGER DEFAULT 0,"
+        ... "`uber_drops` INTEGER DEFAULT 0,"
+        ... "`airshots` INTEGER DEFAULT 0,"
+        ... "`marketGardenHits` INTEGER DEFAULT 0,"
         ... "`playtime` INTEGER DEFAULT 0,"
         ... "`total_ubers` INTEGER DEFAULT 0,"
         ... "`best_streak` INTEGER DEFAULT 0,"
+        ... "`best_ubers_life` INTEGER DEFAULT 0,"
+        ... "`current_killstreak` INTEGER DEFAULT 0,"
+        ... "`current_ubers_life` INTEGER DEFAULT 0,"
         ... "`visible_max` INTEGER DEFAULT 0,"
         ... "`time_connected` INTEGER DEFAULT 0,"
         ... "`classes_mask` INTEGER DEFAULT 0,"
@@ -272,8 +279,15 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS healing INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS headshots INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS backstabs INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS medic_drops INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS airshots INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS playtime INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_ubers_life INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS current_killstreak INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS current_ubers_life INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS visible_max INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS time_connected INTEGER DEFAULT 0",
 
@@ -405,10 +419,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         if (!IsClientInGame(i) || IsFakeClient(i))
             continue;
 
-        if (AreClientCookiesCached(i))
-        {
-            LoadClientStats(i);
-        }
+        RequestClientStateLoads(i);
     }
 }
 
@@ -471,39 +482,88 @@ public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const c
 
 void LoadClientStats(int client)
 {
-    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null)
+    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bStatsLoadPending[client])
     {
         return;
     }
 
-    char steamId[STEAMID64_LEN];
-    if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
     {
         return;
     }
 
-    strcopy(g_Stats[client].steamId, sizeof(g_Stats[client].steamId), steamId);
-    strcopy(g_MapStats[client].steamId, sizeof(g_MapStats[client].steamId), steamId);
+    g_bStatsLoadPending[client] = true;
 
     char query[512];
     Format(query, sizeof(query),
         "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
-        ... "FROM whaletracker WHERE steamid = '%s'", steamId);
+        ... "FROM whaletracker WHERE steamid = '%s'", g_Stats[client].steamId);
 
-    g_hDatabase.Query(WhaleTracker_LoadCallback, query, client);
+    g_hDatabase.Query(WhaleTracker_LoadCallback, query, GetClientUserId(client));
 }
 
-public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const char[] error, any client)
+void LoadClientOnlineSnapshot(int client)
 {
-    int index = client;
-    if (!IsValidClient(index))
+    if (!IsClientInGame(client) || !g_bDatabaseReady || g_hDatabase == null || g_bOnlineStateLoadPending[client])
     {
         return;
     }
 
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return;
+    }
+
+    g_bOnlineStateLoadPending[client] = true;
+
+    char escapedMapName[256];
+    EscapeSqlString(g_sOnlineMapName, escapedMapName, sizeof(escapedMapName));
+
+    char query[1024];
+    Format(query, sizeof(query),
+        "SELECT kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, medic_drops, uber_drops, airshots, marketGardenHits, playtime, total_ubers, best_streak, best_ubers_life, current_killstreak, current_ubers_life, "
+        ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers "
+        ... "FROM whaletracker_online WHERE steamid = '%s' AND host_port = %d AND map_name = '%s' AND last_update >= %d LIMIT 1",
+        g_Stats[client].steamId,
+        g_iHostPort,
+        escapedMapName,
+        GetTime() - 120);
+
+    g_hDatabase.Query(WhaleTracker_LoadOnlineSnapshotCallback, query, GetClientUserId(client));
+}
+
+public void RequestClientStateLoads(int client)
+{
+    if (!IsValidClient(client) || IsFakeClient(client))
+    {
+        return;
+    }
+
+    if (!AreClientCookiesCached(client) || !g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    LoadClientStats(client);
+    LoadClientOnlineSnapshot(client);
+}
+
+public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const char[] error, any data)
+{
+    int index = GetClientOfUserId(data);
+    if (!IsValidClient(index) || IsFakeClient(index))
+    {
+        return;
+    }
+
+    g_bStatsLoadPending[index] = false;
+
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to load stats for %N: %s", index, error);
+        WhaleTracker_RefreshClientTrackingState(index);
         return;
     }
 
@@ -531,19 +591,82 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
         g_Stats[index].totalDamageTaken = results.FetchInt(18);
         g_Stats[index].lastSeen = results.FetchInt(19);
         g_Stats[index].loaded = true;
-        g_MapStats[index].loaded = true;
-        g_MapStats[index].totalUberDrops = g_Stats[index].totalUberDrops;
     }
     else
     {
         g_Stats[index].firstSeenTimestamp = GetTime();
         FormatTime(g_Stats[index].firstSeen, sizeof(g_Stats[index].firstSeen), "%Y-%m-%d", g_Stats[index].firstSeenTimestamp);
         g_Stats[index].loaded = true;
-        g_MapStats[index].loaded = true;
-        g_MapStats[index].loaded = true;
     }
 
     TouchClientLastSeen(index);
+    WhaleTracker_RefreshClientTrackingState(index);
+}
+
+public void WhaleTracker_LoadOnlineSnapshotCallback(Database db, DBResultSet results, const char[] error, any data)
+{
+    int client = GetClientOfUserId(data);
+    if (!IsValidClient(client) || IsFakeClient(client))
+    {
+        return;
+    }
+
+    g_bOnlineStateLoadPending[client] = false;
+
+    if (error[0] != '\0')
+    {
+        LogError("[WhaleTracker] Failed to restore online snapshot for %N: %s", client, error);
+        g_MapStats[client].loaded = true;
+        g_MapStats[client].connectTime = GetEngineTime();
+        TouchClientLastSeen(client);
+        WhaleTracker_RefreshClientTrackingState(client);
+        return;
+    }
+
+    if (results != null && results.FetchRow())
+    {
+        g_MapStats[client].kills = results.FetchInt(0);
+        g_MapStats[client].deaths = results.FetchInt(1);
+        g_MapStats[client].totalAssists = results.FetchInt(2);
+        g_MapStats[client].totalDamage = results.FetchInt(3);
+        g_MapStats[client].totalDamageTaken = results.FetchInt(4);
+        g_MapStats[client].totalHealing = results.FetchInt(5);
+        g_MapStats[client].totalHeadshots = results.FetchInt(6);
+        g_MapStats[client].totalBackstabs = results.FetchInt(7);
+        g_MapStats[client].totalMedicDrops = results.FetchInt(8);
+        g_MapStats[client].totalUberDrops = results.FetchInt(9);
+        g_MapStats[client].totalAirshots = results.FetchInt(10);
+        g_MapStats[client].totalMarketGardenHits = results.FetchInt(11);
+        g_MapStats[client].playtime = results.FetchInt(12);
+        g_MapStats[client].totalUbers = results.FetchInt(13);
+        g_MapStats[client].bestKillstreak = results.FetchInt(14);
+        g_MapStats[client].bestUbersLife = results.FetchInt(15);
+        g_MapStats[client].currentKillstreak = results.FetchInt(16);
+        g_MapStats[client].currentUbersLife = results.FetchInt(17);
+        g_Stats[client].currentKillstreak = g_MapStats[client].currentKillstreak;
+        g_Stats[client].currentUbersLife = g_MapStats[client].currentUbersLife;
+        g_MapStats[client].weaponShots[WeaponCategory_Shotguns] = results.FetchInt(18);
+        g_MapStats[client].weaponHits[WeaponCategory_Shotguns] = results.FetchInt(19);
+        g_MapStats[client].weaponShots[WeaponCategory_Scatterguns] = results.FetchInt(20);
+        g_MapStats[client].weaponHits[WeaponCategory_Scatterguns] = results.FetchInt(21);
+        g_MapStats[client].weaponShots[WeaponCategory_Pistols] = results.FetchInt(22);
+        g_MapStats[client].weaponHits[WeaponCategory_Pistols] = results.FetchInt(23);
+        g_MapStats[client].weaponShots[WeaponCategory_RocketLaunchers] = results.FetchInt(24);
+        g_MapStats[client].weaponHits[WeaponCategory_RocketLaunchers] = results.FetchInt(25);
+        g_MapStats[client].weaponShots[WeaponCategory_GrenadeLaunchers] = results.FetchInt(26);
+        g_MapStats[client].weaponHits[WeaponCategory_GrenadeLaunchers] = results.FetchInt(27);
+        g_MapStats[client].weaponShots[WeaponCategory_StickyLaunchers] = results.FetchInt(28);
+        g_MapStats[client].weaponHits[WeaponCategory_StickyLaunchers] = results.FetchInt(29);
+        g_MapStats[client].weaponShots[WeaponCategory_Snipers] = results.FetchInt(30);
+        g_MapStats[client].weaponHits[WeaponCategory_Snipers] = results.FetchInt(31);
+        g_MapStats[client].weaponShots[WeaponCategory_Revolvers] = results.FetchInt(32);
+        g_MapStats[client].weaponHits[WeaponCategory_Revolvers] = results.FetchInt(33);
+    }
+
+    g_MapStats[client].loaded = true;
+    g_MapStats[client].connectTime = GetEngineTime();
+    TouchClientLastSeen(client);
+    WhaleTracker_RefreshClientTrackingState(client);
 }
 
 bool HasMapActivity(WhaleStats stats)
@@ -564,6 +687,9 @@ bool HasMapActivity(WhaleStats stats)
 bool SaveClientMapStats(int client)
 {
     if (!IsValidClient(client))
+        return false;
+
+    if (!WhaleTracker_AreClientStatsReady(client))
         return false;
 
     if (!g_MapStats[client].loaded)

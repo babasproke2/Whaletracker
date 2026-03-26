@@ -9,8 +9,6 @@ public void OnConfigsExecuted()
     RefreshServerFlags();
 }
 
-
-
 void ResetRuntimeCounters(WhaleStats stats)
 {
     stats.currentKillstreak = 0;
@@ -60,6 +58,8 @@ void ResetAllStats(int client)
     ResetStatsStruct(g_Stats[client], true);
     ResetStatsStruct(g_MapStats[client], true);
     g_bStatsDirty[client] = false;
+    g_bStatsLoadPending[client] = false;
+    g_bOnlineStateLoadPending[client] = false;
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
 }
@@ -92,7 +92,28 @@ void TouchClientLastSeen(int client)
     int now = GetTime();
     g_Stats[client].lastSeen = now;
     g_MapStats[client].lastSeen = now;
-    g_bTrackEligible[client] = (GetClientTeam(client) > 1);
+    WhaleTracker_RefreshClientTrackingState(client);
+}
+
+bool WhaleTracker_AreClientStatsReady(int client)
+{
+    return (client > 0
+        && client <= MaxClients
+        && IsClientInGame(client)
+        && !IsFakeClient(client)
+        && g_Stats[client].loaded
+        && !g_bStatsLoadPending[client]
+        && !g_bOnlineStateLoadPending[client]);
+}
+
+void WhaleTracker_RefreshClientTrackingState(int client)
+{
+    if (client <= 0 || client > MaxClients)
+    {
+        return;
+    }
+
+    g_bTrackEligible[client] = (WhaleTracker_AreClientStatsReady(client) && GetClientTeam(client) > 1);
 }
 
 void ClearOnlineStats()
@@ -117,6 +138,85 @@ void RemoveOnlineStats(int client)
     QueueSaveQuery(query, 0, false);
 }
 
+bool QueueClientOnlineSnapshot(int client, int now, float engineNow, int playerCount, int visibleMax, const char[] escapedMapName, const char[] escapedHostIp, bool forceSync)
+{
+    if (!WhaleTracker_AreClientStatsReady(client))
+    {
+        return false;
+    }
+
+    char steamId[STEAMID64_LEN];
+    if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
+    {
+        return false;
+    }
+
+    char name[MAX_NAME_LENGTH];
+    GetClientName(client, name, sizeof(name));
+    RememberMatchPlayerName(steamId, name);
+
+    char escapedName[MAX_NAME_LENGTH * 2];
+    SQL_EscapeString(g_hDatabase, name, escapedName, sizeof(escapedName));
+
+    TouchClientLastSeen(client);
+
+    TFClassType tfClassType = TF2_GetPlayerClass(client);
+    int tfClass = view_as<int>(tfClassType);
+    int team = GetClientTeam(client);
+    bool alive = IsPlayerAlive(client);
+    bool spectator = (team != 2 && team != 3) || tfClassType == TFClass_Unknown;
+
+    int playtime = g_MapStats[client].playtime;
+    if (g_MapStats[client].connectTime > 0.0)
+    {
+        playtime += RoundToFloor(engineNow - g_MapStats[client].connectTime);
+    }
+
+    char weaponValueSegment[512];
+    BuildWeaponAccuracySegment(g_MapStats[client], weaponValueSegment, sizeof(weaponValueSegment));
+
+    char query[SAVE_QUERY_MAXLEN];
+    Format(query, sizeof(query),
+        "REPLACE INTO whaletracker_online "
+        ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, medic_drops, uber_drops, airshots, marketGardenHits, playtime, total_ubers, best_streak, best_ubers_life, current_killstreak, current_ubers_life, visible_max, time_connected, shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers, host_ip, host_port, playercount, map_name, last_update) "
+        ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, '%s', %d, %d, '%s', %d)",
+        steamId,
+        escapedName,
+        tfClass,
+        team,
+        alive ? 1 : 0,
+        spectator ? 1 : 0,
+        g_MapStats[client].kills,
+        g_MapStats[client].deaths,
+        g_MapStats[client].totalAssists,
+        g_MapStats[client].totalDamage,
+        g_MapStats[client].totalDamageTaken,
+        g_MapStats[client].totalHealing,
+        g_MapStats[client].totalHeadshots,
+        g_MapStats[client].totalBackstabs,
+        g_MapStats[client].totalMedicDrops,
+        g_MapStats[client].totalUberDrops,
+        g_MapStats[client].totalAirshots,
+        g_MapStats[client].totalMarketGardenHits,
+        playtime,
+        g_MapStats[client].totalUbers,
+        g_MapStats[client].bestKillstreak,
+        g_MapStats[client].bestUbersLife,
+        g_MapStats[client].currentKillstreak,
+        g_MapStats[client].currentUbersLife,
+        visibleMax,
+        playtime,
+        weaponValueSegment,
+        escapedHostIp,
+        g_iHostPort,
+        playerCount,
+        escapedMapName,
+        now);
+
+    QueueSaveQuery(query, 0, forceSync);
+    return true;
+}
+
 public Action Timer_UpdateOnlineStats(Handle timer, any data)
 {
     if (!g_bDatabaseReady || g_hDatabase == null)
@@ -136,9 +236,6 @@ public Action Timer_UpdateOnlineStats(Handle timer, any data)
         }
     }
 
-    char steamId[STEAMID64_LEN];
-    char name[MAX_NAME_LENGTH];
-    char escapedName[MAX_NAME_LENGTH * 2];
     char query[SAVE_QUERY_MAXLEN];
     char escapedMapName[256];
     char mapName[128];
@@ -222,65 +319,19 @@ public Action Timer_UpdateOnlineStats(Handle timer, any data)
         if (!IsClientInGame(client) || IsFakeClient(client))
             continue;
 
-        if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
+        if (!QueueClientOnlineSnapshot(client, now, engineNow, playerCount, visibleMax, escapedMapName, escapedHostIp, false))
             continue;
-
-        GetClientName(client, name, sizeof(name));
-        RememberMatchPlayerName(steamId, name);
-        SQL_EscapeString(g_hDatabase, name, escapedName, sizeof(escapedName));
-
-        TouchClientLastSeen(client);
-
-        TFClassType tfClassType = TF2_GetPlayerClass(client);
-        int tfClass = view_as<int>(tfClassType);
-        int team = GetClientTeam(client);
-        bool alive = IsPlayerAlive(client);
-        bool spectator = (team != 2 && team != 3) || tfClassType == TFClass_Unknown;
-
-        int playtime = g_MapStats[client].playtime;
-        if (g_MapStats[client].connectTime > 0.0)
-        {
-            playtime += RoundToFloor(engineNow - g_MapStats[client].connectTime);
-        }
-
-        char weaponValueSegment[512];
-        BuildWeaponAccuracySegment(g_MapStats[client], weaponValueSegment, sizeof(weaponValueSegment));
-
-        Format(query, sizeof(query),
-            "REPLACE INTO whaletracker_online "
-            ... "(steamid, personaname, class, team, alive, is_spectator, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, marketGardenHits, playtime, total_ubers, best_streak, visible_max, time_connected, shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers, host_ip, host_port, playercount, map_name, last_update) "
-            ... "VALUES ('%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, '%s', %d, %d, '%s', %d)",
-            steamId,
-            escapedName,
-            tfClass,
-            team,
-            alive ? 1 : 0,
-            spectator ? 1 : 0,
-            g_MapStats[client].kills,
-            g_MapStats[client].deaths,
-            g_MapStats[client].totalAssists,
-            g_MapStats[client].totalDamage,
-            g_MapStats[client].totalDamageTaken,
-            g_MapStats[client].totalHealing,
-            g_MapStats[client].totalHeadshots,
-            g_MapStats[client].totalBackstabs,
-            g_MapStats[client].totalMarketGardenHits,
-            playtime,
-            g_MapStats[client].totalUbers,
-            g_MapStats[client].bestKillstreak,
-            visibleMax,
-            playtime,
-            weaponValueSegment,
-            escapedHostIp,
-            g_iHostPort,
-            playerCount,
-            escapedMapName,
-            now);
-
-        QueueSaveQuery(query, 0, false);
 
         int snapshotData[MATCH_STAT_COUNT];
         SnapshotFromStats(g_MapStats[client], snapshotData);
+        char steamId[STEAMID64_LEN];
+        if (!GetClientAuthId(client, AuthId_SteamID64, steamId, sizeof(steamId)))
+        {
+            continue;
+        }
+
+        char name[MAX_NAME_LENGTH];
+        GetClientName(client, name, sizeof(name));
         InsertPlayerLogRecord(snapshotData, steamId, name, now, false);
     }
 
@@ -1290,12 +1341,17 @@ void RecordHeadshotEvent(int client)
 
 bool WhaleTracker_IsTrackingEnabled(int client)
 {
-    return (client > 0 && client <= MaxClients && !IsFakeClient(client) && GetClientTeam(client) > 1 && g_bTrackEligible[client]);
+    return (client > 0
+        && client <= MaxClients
+        && !IsFakeClient(client)
+        && GetClientTeam(client) > 1
+        && WhaleTracker_AreClientStatsReady(client)
+        && g_bTrackEligible[client]);
 }
 
 bool WhaleTracker_CheckDamageGate(int client, int damage)
 {
-    if (client <= 0 || client > MaxClients || IsFakeClient(client) || GetClientTeam(client) <= 1)
+    if (client <= 0 || client > MaxClients || IsFakeClient(client) || GetClientTeam(client) <= 1 || !WhaleTracker_AreClientStatsReady(client))
     {
         return false;
     }
