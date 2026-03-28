@@ -558,6 +558,22 @@ void SnapshotFromStats(const WhaleStats stats, int data[MATCH_STAT_COUNT])
     data[MatchStat_UberDrops] = stats.totalUberDrops;
     data[MatchStat_Airshots] = stats.totalAirshots;
     data[MatchStat_MarketGardenHits] = stats.totalMarketGardenHits;
+    data[MatchStat_ShotsShotguns] = stats.weaponShots[WeaponCategory_Shotguns];
+    data[MatchStat_HitsShotguns] = stats.weaponHits[WeaponCategory_Shotguns];
+    data[MatchStat_ShotsScatterguns] = stats.weaponShots[WeaponCategory_Scatterguns];
+    data[MatchStat_HitsScatterguns] = stats.weaponHits[WeaponCategory_Scatterguns];
+    data[MatchStat_ShotsPistols] = stats.weaponShots[WeaponCategory_Pistols];
+    data[MatchStat_HitsPistols] = stats.weaponHits[WeaponCategory_Pistols];
+    data[MatchStat_ShotsRocketLaunchers] = stats.weaponShots[WeaponCategory_RocketLaunchers];
+    data[MatchStat_HitsRocketLaunchers] = stats.weaponHits[WeaponCategory_RocketLaunchers];
+    data[MatchStat_ShotsGrenadeLaunchers] = stats.weaponShots[WeaponCategory_GrenadeLaunchers];
+    data[MatchStat_HitsGrenadeLaunchers] = stats.weaponHits[WeaponCategory_GrenadeLaunchers];
+    data[MatchStat_ShotsStickyLaunchers] = stats.weaponShots[WeaponCategory_StickyLaunchers];
+    data[MatchStat_HitsStickyLaunchers] = stats.weaponHits[WeaponCategory_StickyLaunchers];
+    data[MatchStat_ShotsSnipers] = stats.weaponShots[WeaponCategory_Snipers];
+    data[MatchStat_HitsSnipers] = stats.weaponHits[WeaponCategory_Snipers];
+    data[MatchStat_ShotsRevolvers] = stats.weaponShots[WeaponCategory_Revolvers];
+    data[MatchStat_HitsRevolvers] = stats.weaponHits[WeaponCategory_Revolvers];
     data[MatchStat_BestStreak] = stats.bestKillstreak;
     data[MatchStat_BestUbersLife] = stats.bestUbersLife;
 }
@@ -578,6 +594,22 @@ void MergeSnapshotArrays(int base[MATCH_STAT_COUNT], const int delta[MATCH_STAT_
     base[MatchStat_UberDrops] += delta[MatchStat_UberDrops];
     base[MatchStat_Airshots] += delta[MatchStat_Airshots];
     base[MatchStat_MarketGardenHits] += delta[MatchStat_MarketGardenHits];
+    base[MatchStat_ShotsShotguns] += delta[MatchStat_ShotsShotguns];
+    base[MatchStat_HitsShotguns] += delta[MatchStat_HitsShotguns];
+    base[MatchStat_ShotsScatterguns] += delta[MatchStat_ShotsScatterguns];
+    base[MatchStat_HitsScatterguns] += delta[MatchStat_HitsScatterguns];
+    base[MatchStat_ShotsPistols] += delta[MatchStat_ShotsPistols];
+    base[MatchStat_HitsPistols] += delta[MatchStat_HitsPistols];
+    base[MatchStat_ShotsRocketLaunchers] += delta[MatchStat_ShotsRocketLaunchers];
+    base[MatchStat_HitsRocketLaunchers] += delta[MatchStat_HitsRocketLaunchers];
+    base[MatchStat_ShotsGrenadeLaunchers] += delta[MatchStat_ShotsGrenadeLaunchers];
+    base[MatchStat_HitsGrenadeLaunchers] += delta[MatchStat_HitsGrenadeLaunchers];
+    base[MatchStat_ShotsStickyLaunchers] += delta[MatchStat_ShotsStickyLaunchers];
+    base[MatchStat_HitsStickyLaunchers] += delta[MatchStat_HitsStickyLaunchers];
+    base[MatchStat_ShotsSnipers] += delta[MatchStat_ShotsSnipers];
+    base[MatchStat_HitsSnipers] += delta[MatchStat_HitsSnipers];
+    base[MatchStat_ShotsRevolvers] += delta[MatchStat_ShotsRevolvers];
+    base[MatchStat_HitsRevolvers] += delta[MatchStat_HitsRevolvers];
 
     if (delta[MatchStat_BestStreak] > base[MatchStat_BestStreak])
     {
@@ -647,6 +679,22 @@ void ApplySnapshotToStats(WhaleStats stats, const int data[MATCH_STAT_COUNT])
     stats.totalUberDrops = data[MatchStat_UberDrops];
     stats.totalAirshots = data[MatchStat_Airshots];
     stats.totalMarketGardenHits = data[MatchStat_MarketGardenHits];
+    stats.weaponShots[WeaponCategory_Shotguns] = data[MatchStat_ShotsShotguns];
+    stats.weaponHits[WeaponCategory_Shotguns] = data[MatchStat_HitsShotguns];
+    stats.weaponShots[WeaponCategory_Scatterguns] = data[MatchStat_ShotsScatterguns];
+    stats.weaponHits[WeaponCategory_Scatterguns] = data[MatchStat_HitsScatterguns];
+    stats.weaponShots[WeaponCategory_Pistols] = data[MatchStat_ShotsPistols];
+    stats.weaponHits[WeaponCategory_Pistols] = data[MatchStat_HitsPistols];
+    stats.weaponShots[WeaponCategory_RocketLaunchers] = data[MatchStat_ShotsRocketLaunchers];
+    stats.weaponHits[WeaponCategory_RocketLaunchers] = data[MatchStat_HitsRocketLaunchers];
+    stats.weaponShots[WeaponCategory_GrenadeLaunchers] = data[MatchStat_ShotsGrenadeLaunchers];
+    stats.weaponHits[WeaponCategory_GrenadeLaunchers] = data[MatchStat_HitsGrenadeLaunchers];
+    stats.weaponShots[WeaponCategory_StickyLaunchers] = data[MatchStat_ShotsStickyLaunchers];
+    stats.weaponHits[WeaponCategory_StickyLaunchers] = data[MatchStat_HitsStickyLaunchers];
+    stats.weaponShots[WeaponCategory_Snipers] = data[MatchStat_ShotsSnipers];
+    stats.weaponHits[WeaponCategory_Snipers] = data[MatchStat_HitsSnipers];
+    stats.weaponShots[WeaponCategory_Revolvers] = data[MatchStat_ShotsRevolvers];
+    stats.weaponHits[WeaponCategory_Revolvers] = data[MatchStat_HitsRevolvers];
     stats.bestKillstreak = data[MatchStat_BestStreak];
     stats.bestUbersLife = data[MatchStat_BestUbersLife];
     stats.loaded = true;
@@ -854,8 +902,12 @@ void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[] steamI
     char query[SAVE_QUERY_MAXLEN];
     Format(query, sizeof(query),
         "INSERT INTO whaletracker_log_players "
-        ... "(log_id, steamid, personaname, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, total_ubers, playtime, medic_drops, uber_drops, airshots, marketGardenHits, best_streak, best_ubers_life, last_updated) "
-        ... "VALUES ('%s', '%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d) "
+        ... "(log_id, steamid, personaname, kills, deaths, assists, damage, damage_taken, healing, headshots, backstabs, total_ubers, playtime, medic_drops, uber_drops, airshots, marketGardenHits, "
+        ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers, "
+        ... "best_streak, best_ubers_life, last_updated) "
+        ... "VALUES ('%s', '%s', '%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "%d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "%d, %d, %d) "
         ... "ON DUPLICATE KEY UPDATE "
         ... "personaname = VALUES(personaname), "
         ... "kills = VALUES(kills), "
@@ -872,6 +924,22 @@ void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[] steamI
         ... "uber_drops = VALUES(uber_drops), "
         ... "airshots = VALUES(airshots), "
         ... "marketGardenHits = VALUES(marketGardenHits), "
+        ... "shots_shotguns = VALUES(shots_shotguns), "
+        ... "hits_shotguns = VALUES(hits_shotguns), "
+        ... "shots_scatterguns = VALUES(shots_scatterguns), "
+        ... "hits_scatterguns = VALUES(hits_scatterguns), "
+        ... "shots_pistols = VALUES(shots_pistols), "
+        ... "hits_pistols = VALUES(hits_pistols), "
+        ... "shots_rocketlaunchers = VALUES(shots_rocketlaunchers), "
+        ... "hits_rocketlaunchers = VALUES(hits_rocketlaunchers), "
+        ... "shots_grenadelaunchers = VALUES(shots_grenadelaunchers), "
+        ... "hits_grenadelaunchers = VALUES(hits_grenadelaunchers), "
+        ... "shots_stickylaunchers = VALUES(shots_stickylaunchers), "
+        ... "hits_stickylaunchers = VALUES(hits_stickylaunchers), "
+        ... "shots_snipers = VALUES(shots_snipers), "
+        ... "hits_snipers = VALUES(hits_snipers), "
+        ... "shots_revolvers = VALUES(shots_revolvers), "
+        ... "hits_revolvers = VALUES(hits_revolvers), "
         ... "best_streak = VALUES(best_streak), "
         ... "best_ubers_life = VALUES(best_ubers_life), "
         ... "last_updated = VALUES(last_updated)",
@@ -892,6 +960,22 @@ void InsertPlayerLogRecord(const int data[MATCH_STAT_COUNT], const char[] steamI
         data[MatchStat_UberDrops],
         data[MatchStat_Airshots],
         data[MatchStat_MarketGardenHits],
+        data[MatchStat_ShotsShotguns],
+        data[MatchStat_HitsShotguns],
+        data[MatchStat_ShotsScatterguns],
+        data[MatchStat_HitsScatterguns],
+        data[MatchStat_ShotsPistols],
+        data[MatchStat_HitsPistols],
+        data[MatchStat_ShotsRocketLaunchers],
+        data[MatchStat_HitsRocketLaunchers],
+        data[MatchStat_ShotsGrenadeLaunchers],
+        data[MatchStat_HitsGrenadeLaunchers],
+        data[MatchStat_ShotsStickyLaunchers],
+        data[MatchStat_HitsStickyLaunchers],
+        data[MatchStat_ShotsSnipers],
+        data[MatchStat_HitsSnipers],
+        data[MatchStat_ShotsRevolvers],
+        data[MatchStat_HitsRevolvers],
         data[MatchStat_BestStreak],
         data[MatchStat_BestUbersLife],
         timestamp);

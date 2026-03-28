@@ -1088,11 +1088,9 @@ function wt_get_cached_logs(int $limit = 0, string $scope = 'regular', int $page
         $cacheMeta = json_decode(file_get_contents($metaFile), true) ?? [];
     }
 
-    $pdo = wt_pdo();
-    $stmt = $pdo->query("SELECT MAX(updated_at) as last_update, COUNT(*) as total_logs FROM " . wt_logs_table());
-    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : [];
-    $lastDbUpdate = (int)($row['last_update'] ?? 0);
-    $totalLogsActual = (int)($row['total_logs'] ?? 0);
+    $cacheState = wt_logs_cache_state();
+    $lastDbUpdate = (int)($cacheState['recent'] ?? 0);
+    $totalLogsActual = (int)($cacheState['total'] ?? 0);
     $effectiveTotal = $totalLogsActual;
     if ($maxPages > 0) {
         $maxDisplay = $maxPages * $limit;
@@ -2537,12 +2535,25 @@ function wt_cumulative_revision(): string
 
 function wt_logs_revision(): string
 {
-    $pdo = wt_pdo();
-    $stmt = $pdo->query('SELECT MAX(updated_at) AS recent, COUNT(*) AS total FROM ' . wt_logs_table());
-    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+    $row = wt_logs_cache_state();
     $recent = (int)($row['recent'] ?? 0);
     $total = (int)($row['total'] ?? 0);
     return $recent . ':' . $total;
+}
+
+function wt_logs_cache_state(): array
+{
+    $pdo = wt_pdo();
+    $sql = sprintf(
+        'SELECT GREATEST(COALESCE(MAX(l.updated_at), 0), COALESCE(MAX(lp.last_updated), 0)) AS recent, COUNT(DISTINCT l.log_id) AS total
+         FROM %s l
+         LEFT JOIN %s lp ON lp.log_id = l.log_id',
+        wt_logs_table(),
+        wt_log_players_table()
+    );
+    $stmt = $pdo->query($sql);
+    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+    return is_array($row) ? $row : [];
 }
 function wt_render_cumulative_fragment(array $context): string
 {

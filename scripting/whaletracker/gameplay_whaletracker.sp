@@ -317,14 +317,7 @@ bool IsMarketGardenerWeapon(int weapon)
 bool IsMarketGardenerHit(int attacker, int weapon)
 {
     bool validAttacker = IsValidClient(attacker);
-    TFClassType attackerClass = validAttacker ? TF2_GetPlayerClass(attacker) : TFClass_Unknown;
     bool inExplosiveJump = validAttacker ? g_bInExplosiveJump[attacker] : false;
-
-    int activeWeapon = -1;
-    if (validAttacker)
-    {
-        activeWeapon = GetEntPropEnt(attacker, Prop_Send, "m_hActiveWeapon");
-    }
 
     if (!inExplosiveJump)
     {
@@ -336,18 +329,11 @@ bool IsMarketGardenerHit(int attacker, int weapon)
         return false;
     }
 
-    if (attackerClass != TFClass_Soldier)
-    {
-        return false;
-    }
-
     if (IsMarketGardenerWeapon(weapon))
     {
         return true;
     }
-
-    int meleeWeapon = validAttacker ? GetPlayerWeaponSlot(attacker, TFWeaponSlot_Melee) : -1;
-    return (activeWeapon == meleeWeapon) && IsMarketGardenerWeapon(activeWeapon);
+    return false;
 }
 
 float DistanceAboveGroundBox(int victim)

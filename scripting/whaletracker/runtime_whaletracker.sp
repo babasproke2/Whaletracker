@@ -253,26 +253,13 @@ public void OnPluginEnd()
     WhaleTracker_RustShutdown();
     g_bShuttingDown = true;
 
-    if (g_hOnlineTimer != null)
-    {
-        CloseHandle(g_hOnlineTimer);
-        g_hOnlineTimer = null;
-    }
-    if (g_hPeriodicSaveTimer != null)
-    {
-        CloseHandle(g_hPeriodicSaveTimer);
-        g_hPeriodicSaveTimer = null;
-    }
-    if (g_hReconnectTimer != null)
-    {
-        CloseHandle(g_hReconnectTimer);
-        g_hReconnectTimer = null;
-    }
-    if (g_hSavePumpTimer != null)
-    {
-        CloseHandle(g_hSavePumpTimer);
-        g_hSavePumpTimer = null;
-    }
+    // These timers are plugin-owned and will be cleaned up on unload. Avoid
+    // closing them here because mapchange/no-mapchange timers can already be
+    // invalid by the time OnPluginEnd runs.
+    g_hOnlineTimer = null;
+    g_hPeriodicSaveTimer = null;
+    g_hReconnectTimer = null;
+    g_hSavePumpTimer = null;
 
     if (g_hAirshotForward != null)
     {
