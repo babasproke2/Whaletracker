@@ -255,6 +255,9 @@ bool IsSupstatsAirshot(int attacker, int victim, int weapon, bool wasDirectHit)
     if (!IsValidClient(attacker) || IsFakeClient(attacker) || !IsValidClient(victim) || IsFakeClient(victim))
         return false;
 
+    if (GetClientTeam(victim) == GetClientTeam(attacker))
+        return false;
+
     int primary = GetPlayerWeaponSlot(attacker, 0);
     if (primary <= MaxClients || primary != weapon)
     {
