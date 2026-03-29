@@ -5,7 +5,7 @@ public void WhaleTracker_InitMotdCommands()
         return;
     }
 
-    RegConsoleCmd("sm_whale", Command_WhaleMOTD, "Opens whale stats page.");
+    RegConsoleCmd("sm_logs", Command_WhaleMOTD, "Opens whale stats page.");
     RegConsoleCmd("sm_ss", Command_WhaleMOTD, "Opens whale stats page.");
     AddCommandListener(WhaleMOTD_ChatListener, "say");
     AddCommandListener(WhaleMOTD_ChatListener, "say_team");
@@ -26,7 +26,7 @@ public Action Command_WhaleMOTD(int client, int args)
     }
 
     char url[256];
-    Format(url, sizeof(url), "https://kogasa.tf/stats/logs/current/");
+    Format(url, sizeof(url), "https://kogasa.tf/logs/current/");
 
     KeyValues kv = new KeyValues("data");
     kv.SetString("title", "Whale Stats");
