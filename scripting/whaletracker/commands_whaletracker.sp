@@ -165,6 +165,33 @@ public Action Command_ShowMarketGardens(int client, int args)
     return Plugin_Handled;
 }
 
+public Action Command_SetFavoriteClass(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+
+    if (args >= 1)
+    {
+        char classArg[32];
+        GetCmdArg(1, classArg, sizeof(classArg));
+        TrimString(classArg);
+
+        int favoriteClass = ParseFavoriteClassName(classArg);
+        if (favoriteClass != CLASS_UNKNOWN)
+        {
+            SetFavoriteClassForClient(client, favoriteClass);
+            return Plugin_Handled;
+        }
+
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Unknown class '%s'.", classArg);
+    }
+
+    ShowFavoriteClassMenu(client);
+    return Plugin_Handled;
+}
+
 public Action Command_ShowLeaderboard(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
@@ -255,6 +282,184 @@ public Action Command_ShowLeaderboard(int client, int args)
 
     CPrintToChat(client, "Use !{gold}ranks %d{default} to view the next 10 ranks!", page + 1);
     return Plugin_Handled;
+}
+
+void ShowFavoriteClassMenu(int client)
+{
+    Menu menu = new Menu(MenuHandler_FavoriteClass);
+    menu.SetTitle("Select Favorite Class");
+    menu.AddItem("1", "Scout");
+    menu.AddItem("3", "Soldier");
+    menu.AddItem("7", "Pyro");
+    menu.AddItem("4", "Demoman");
+    menu.AddItem("6", "Heavy");
+    menu.AddItem("9", "Engineer");
+    menu.AddItem("5", "Medic");
+    menu.AddItem("2", "Sniper");
+    menu.AddItem("8", "Spy");
+    menu.Pagination = 5;
+    menu.ExitButton = true;
+    menu.Display(client, MENU_TIME_FOREVER);
+}
+
+public int MenuHandler_FavoriteClass(Menu menu, MenuAction action, int client, int item)
+{
+    if (action == MenuAction_Select)
+    {
+        char info[8];
+        menu.GetItem(item, info, sizeof(info));
+        int favoriteClass = StringToInt(info);
+        if (favoriteClass != CLASS_UNKNOWN)
+        {
+            SetFavoriteClassForClient(client, favoriteClass);
+        }
+    }
+    else if (action == MenuAction_End)
+    {
+        delete menu;
+    }
+
+    return 0;
+}
+
+int ParseFavoriteClassName(const char[] className)
+{
+    if (StrEqual(className, "scout", false))
+    {
+        return CLASS_SCOUT;
+    }
+    if (StrEqual(className, "soldier", false))
+    {
+        return CLASS_SOLDIER;
+    }
+    if (StrEqual(className, "pyro", false))
+    {
+        return CLASS_PYRO;
+    }
+    if (StrEqual(className, "demo", false) || StrEqual(className, "demoman", false))
+    {
+        return CLASS_DEMOMAN;
+    }
+    if (StrEqual(className, "heavy", false))
+    {
+        return CLASS_HEAVY;
+    }
+    if (StrEqual(className, "engi", false) || StrEqual(className, "engineer", false))
+    {
+        return CLASS_ENGINEER;
+    }
+    if (StrEqual(className, "medic", false))
+    {
+        return CLASS_MEDIC;
+    }
+    if (StrEqual(className, "sniper", false))
+    {
+        return CLASS_SNIPER;
+    }
+    if (StrEqual(className, "spy", false))
+    {
+        return CLASS_SPY;
+    }
+
+    return CLASS_UNKNOWN;
+}
+
+void GetFavoriteClassDisplayName(int favoriteClass, char[] buffer, int maxlen)
+{
+    switch (favoriteClass)
+    {
+        case CLASS_SCOUT:
+        {
+            strcopy(buffer, maxlen, "Scout");
+        }
+        case CLASS_SOLDIER:
+        {
+            strcopy(buffer, maxlen, "Soldier");
+        }
+        case CLASS_PYRO:
+        {
+            strcopy(buffer, maxlen, "Pyro");
+        }
+        case CLASS_DEMOMAN:
+        {
+            strcopy(buffer, maxlen, "Demoman");
+        }
+        case CLASS_HEAVY:
+        {
+            strcopy(buffer, maxlen, "Heavy");
+        }
+        case CLASS_ENGINEER:
+        {
+            strcopy(buffer, maxlen, "Engineer");
+        }
+        case CLASS_MEDIC:
+        {
+            strcopy(buffer, maxlen, "Medic");
+        }
+        case CLASS_SNIPER:
+        {
+            strcopy(buffer, maxlen, "Sniper");
+        }
+        case CLASS_SPY:
+        {
+            strcopy(buffer, maxlen, "Spy");
+        }
+        default:
+        {
+            strcopy(buffer, maxlen, "Unknown");
+        }
+    }
+}
+
+void SetFavoriteClassForClient(int client, int favoriteClass)
+{
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Database is not ready.");
+        return;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Could not determine your SteamID yet.");
+        return;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    int firstSeen = g_Stats[client].firstSeenTimestamp;
+    if (firstSeen <= 0)
+    {
+        firstSeen = GetTime();
+    }
+
+    char query[512];
+    Format(query, sizeof(query),
+        "INSERT INTO whaletracker (steamid, first_seen, favorite_class) "
+        ... "VALUES ('%s', %d, %d) "
+        ... "ON DUPLICATE KEY UPDATE "
+        ... "first_seen = LEAST(first_seen, VALUES(first_seen)), "
+        ... "favorite_class = VALUES(favorite_class)",
+        escapedSteamId,
+        firstSeen,
+        favoriteClass);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] Failed to set favorite class for %N: %s", client, error);
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Failed to save your favorite class.");
+        return;
+    }
+    delete results;
+
+    char className[16];
+    GetFavoriteClassDisplayName(favoriteClass, className, sizeof(className));
+    CPrintToChat(client, "{green}[WhaleTracker]{default} Your favorite class is now {gold}%s{default}!", className);
 }
 
 void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen)

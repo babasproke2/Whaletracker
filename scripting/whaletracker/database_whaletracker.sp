@@ -58,6 +58,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`playtime` INTEGER DEFAULT 0,"
         ... "`damage_dealt` INTEGER DEFAULT 0,"
         ... "`damage_taken` INTEGER DEFAULT 0,"
+        ... "`favorite_class` TINYINT DEFAULT 0,"
         ... "`shots_scatterguns` INTEGER DEFAULT 0,"
         ... "`hits_scatterguns` INTEGER DEFAULT 0,"
         ... "`shots_pistols` INTEGER DEFAULT 0,"
@@ -233,6 +234,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
     {
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_dealt INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS favorite_class TINYINT DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS medicKills INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS heavyKills INTEGER DEFAULT 0",
