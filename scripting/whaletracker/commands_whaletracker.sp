@@ -189,6 +189,7 @@ public Action Command_SetFavoriteClass(int client, int args)
     }
 
     ShowFavoriteClassMenu(client);
+    PrintCurrentFavoriteClass(client);
     return Plugin_Handled;
 }
 
@@ -409,6 +410,59 @@ void GetFavoriteClassDisplayName(int favoriteClass, char[] buffer, int maxlen)
             strcopy(buffer, maxlen, "Unknown");
         }
     }
+}
+
+void PrintCurrentFavoriteClass(int client)
+{
+    int favoriteClass = GetFavoriteClassForClient(client);
+    if (favoriteClass == CLASS_UNKNOWN)
+    {
+        return;
+    }
+
+    char className[16];
+    GetFavoriteClassDisplayName(favoriteClass, className, sizeof(className));
+    CPrintToChat(client, "{green}[WhaleTracker]{default} Your favorite class: {gold}%s{default}", className);
+}
+
+int GetFavoriteClassForClient(int client)
+{
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return CLASS_UNKNOWN;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return CLASS_UNKNOWN;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char query[192];
+    Format(query, sizeof(query),
+        "SELECT COALESCE(favorite_class, 0) FROM whaletracker WHERE steamid = '%s' LIMIT 1",
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] Failed to load favorite class for %N: %s", client, error);
+        return CLASS_UNKNOWN;
+    }
+
+    int favoriteClass = CLASS_UNKNOWN;
+    if (SQL_HasResultSet(results) && results.FetchRow())
+    {
+        favoriteClass = results.FetchInt(0);
+    }
+
+    delete results;
+    return favoriteClass;
 }
 
 void SetFavoriteClassForClient(int client, int favoriteClass)
