@@ -100,8 +100,8 @@ public Action Command_ShowPoints(int client, int args)
     GetClientName(target, playerName, sizeof(playerName));
     CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
     CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
-    CPrintToChat(client, "Numerator: {lightgreen}((damage / 300) + (healing / 400) + (kills * 1.5 + assists * 0.5) + {magenta}bonus{lightgreen} + backstabs + headshots + (airshots * 3) + medic kills + heavy kills + (market gardens * 5) + (ubers * 10)){default}");
-    CPrintToChat(client, "Denominator: {axis}(deaths + (damage taken / 500)){default} * 10000");
+    CPrintToChat(client, "Numerator: {lightgreen}((damage / 300) + (healing / 400) + (kills * 1.5 + assists * 0.5) + {magenta}bonus{lightgreen} + backstabs + headshots + (airshots * 3) + medic kills + heavy kills + (market gardens * 5) + (ubers * 10))");
+    CPrintToChat(client, "Denominator: {axis}(deaths + (damage taken / 500)) * 10000");
     CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
     return Plugin_Handled;
 }
@@ -163,6 +163,17 @@ public Action Command_ShowMarketGardens(int client, int args)
     }
 
     CPrintToChat(client, "{green}[WhaleTracker]{default} Market gardens: {gold}%d {default}| Airshots: {gold}%d", g_Stats[client].totalMarketGardenHits, g_Stats[client].totalAirshots);
+    return Plugin_Handled;
+}
+
+public Action Command_ShowBonusPoints(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+
+    CPrintToChat(client, "{green}[WhaleTracker]{default} Bonus points: {magenta}%d{default}\nGet bonus points by killing players with a score 15% or higher than yours;\nYou can also get bonus points from {magenta}!missions", g_Stats[client].bonusPoints);
     return Plugin_Handled;
 }
 
