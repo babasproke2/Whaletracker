@@ -88,7 +88,9 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             MarkClientDirty(attacker);
             if (awardedBonusPoints)
             {
-                CPrintToChat(attacker, "+3 {magenta}Bonus Points{default} for killing %N", victim);
+                char colorTag[32];
+                GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
+                CPrintToChat(attacker, "+3 {magenta}Bonus Points{default} for killing {%s}%N{default}", colorTag, victim);
             }
         }
 
