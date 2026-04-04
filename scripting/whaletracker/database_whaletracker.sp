@@ -756,7 +756,7 @@ void QueueStatsSave(int client, int userId, bool forceSync)
         ... "best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen, "
         ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers) "
         ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
-        ... "%d, %d, %d, %d, %d, %d, "
+        ... "%d, %d, %d, %d, %d, %d, %d, "
         ... "%s) "
         ... "ON DUPLICATE KEY UPDATE "
         ... "first_seen = LEAST(first_seen, VALUES(first_seen)), "
