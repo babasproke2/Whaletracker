@@ -21,7 +21,7 @@
 #define DB_CONFIG_DEFAULT "default"
 #define SAVE_QUERY_MAXLEN 4096
 #define MAX_CONCURRENT_SAVE_QUERIES 4
-#define WHALE_POINTS_SQL_EXPR "CEIL((((GREATEST(damage_dealt,0) / 300.0) + (GREATEST(healing,0) / 400.0) + FLOOR((GREATEST(kills,0) * 1.5) + (GREATEST(assists,0) * 0.5)) + GREATEST(backstabs,0) + GREATEST(headshots,0) + (GREATEST(airshots,0) * 3) + GREATEST(medicKills,0) + GREATEST(heavyKills,0) + (GREATEST(marketGardenHits,0) * 5) + (GREATEST(total_ubers,0) * 10)) * 10000.0) / GREATEST(GREATEST(deaths,0) + (GREATEST(damage_taken,0) / 500.0), 1))"
+#define WHALE_POINTS_SQL_EXPR "CEIL((((GREATEST(damage_dealt,0) / 300.0) + (GREATEST(healing,0) / 400.0) + FLOOR((GREATEST(kills,0) * 1.5) + (GREATEST(assists,0) * 0.5)) + GREATEST(bonusPoints,0) + GREATEST(backstabs,0) + GREATEST(headshots,0) + (GREATEST(airshots,0) * 3) + GREATEST(medicKills,0) + GREATEST(heavyKills,0) + (GREATEST(marketGardenHits,0) * 5) + (GREATEST(total_ubers,0) * 10)) * 10000.0) / GREATEST(GREATEST(deaths,0) + (GREATEST(damage_taken,0) / 500.0), 1))"
 #define WHALE_POINTS_MIN_KD_SUM 1000
 #define WHALE_LEADERBOARD_PAGE_SIZE 10
 #define WT_MARKET_GARDENER_DEF_INDEX 416
@@ -103,6 +103,7 @@ enum struct WhaleStats
     int totalUbers;
     int totalMedicDrops;
     int totalAirshots;
+    int bonusPoints;
     int totalMedicKills;
     int totalHeavyKills;
     int totalMarketGardenHits;

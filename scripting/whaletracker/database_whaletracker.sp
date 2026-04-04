@@ -48,6 +48,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`medic_drops` INTEGER DEFAULT 0,"
         ... "`uber_drops` INTEGER DEFAULT 0,"
         ... "`airshots` INTEGER DEFAULT 0,"
+        ... "`bonusPoints` INTEGER DEFAULT 0,"
         ... "`medicKills` INTEGER DEFAULT 0,"
         ... "`heavyKills` INTEGER DEFAULT 0,"
         ... "`marketGardenHits` INTEGER DEFAULT 0,"
@@ -235,6 +236,7 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_dealt INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS favorite_class TINYINT DEFAULT 0",
+        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS bonusPoints INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS medicKills INTEGER DEFAULT 0",
         "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS heavyKills INTEGER DEFAULT 0",
@@ -499,7 +501,7 @@ void LoadClientStats(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
+        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, bonusPoints, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
         ... "FROM whaletracker WHERE steamid = '%s'", g_Stats[client].steamId);
 
     g_hDatabase.Query(WhaleTracker_LoadCallback, query, GetClientUserId(client));
@@ -592,17 +594,18 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
         g_Stats[index].totalMedicDrops = results.FetchInt(6);
         g_Stats[index].totalUberDrops = results.FetchInt(7);
         g_Stats[index].totalAirshots = results.FetchInt(8);
-        g_Stats[index].totalMedicKills = results.FetchInt(9);
-        g_Stats[index].totalHeavyKills = results.FetchInt(10);
-        g_Stats[index].totalMarketGardenHits = results.FetchInt(11);
-        g_Stats[index].totalHeadshots = results.FetchInt(12);
-        g_Stats[index].totalBackstabs = results.FetchInt(13);
-        g_Stats[index].bestKillstreak = results.FetchInt(14);
-        g_Stats[index].totalAssists = results.FetchInt(15);
-        g_Stats[index].playtime = results.FetchInt(16);
-        g_Stats[index].totalDamage = results.FetchInt(17);
-        g_Stats[index].totalDamageTaken = results.FetchInt(18);
-        g_Stats[index].lastSeen = results.FetchInt(19);
+        g_Stats[index].bonusPoints = results.FetchInt(9);
+        g_Stats[index].totalMedicKills = results.FetchInt(10);
+        g_Stats[index].totalHeavyKills = results.FetchInt(11);
+        g_Stats[index].totalMarketGardenHits = results.FetchInt(12);
+        g_Stats[index].totalHeadshots = results.FetchInt(13);
+        g_Stats[index].totalBackstabs = results.FetchInt(14);
+        g_Stats[index].bestKillstreak = results.FetchInt(15);
+        g_Stats[index].totalAssists = results.FetchInt(16);
+        g_Stats[index].playtime = results.FetchInt(17);
+        g_Stats[index].totalDamage = results.FetchInt(18);
+        g_Stats[index].totalDamageTaken = results.FetchInt(19);
+        g_Stats[index].lastSeen = results.FetchInt(20);
         g_Stats[index].loaded = true;
     }
     else
@@ -691,6 +694,7 @@ bool HasMapActivity(WhaleStats stats)
         || stats.totalHealing > 0
         || stats.totalDamage > 0
         || stats.totalDamageTaken > 0
+        || stats.bonusPoints > 0
         || stats.totalHeadshots > 0
         || stats.totalBackstabs > 0
         || stats.totalUberDrops > 0
@@ -748,11 +752,11 @@ void QueueStatsSave(int client, int userId, bool forceSync)
 
     Format(query, sizeof(query),
         "INSERT INTO whaletracker "
-        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, medicKills, heavyKills, marketGardenHits, headshots, backstabs, "
+        ... "(steamid, first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, bonusPoints, medicKills, heavyKills, marketGardenHits, headshots, backstabs, "
         ... "best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen, "
         ... "shots_shotguns, hits_shotguns, shots_scatterguns, hits_scatterguns, shots_pistols, hits_pistols, shots_rocketlaunchers, hits_rocketlaunchers, shots_grenadelaunchers, hits_grenadelaunchers, shots_stickylaunchers, hits_stickylaunchers, shots_snipers, hits_snipers, shots_revolvers, hits_revolvers) "
-        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
-        ... "%d, %d, %d, %d, %d, %d, "
+        ... "VALUES ('%s', %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, "
+        ... "%d, %d, %d, %d, %d, %d, %d, "
         ... "%d, %s) "
         ... "ON DUPLICATE KEY UPDATE "
         ... "first_seen = LEAST(first_seen, VALUES(first_seen)), "
@@ -764,6 +768,7 @@ void QueueStatsSave(int client, int userId, bool forceSync)
         ... "medic_drops = GREATEST(medic_drops, VALUES(medic_drops)), "
         ... "uber_drops = GREATEST(uber_drops, VALUES(uber_drops)), "
         ... "airshots = GREATEST(airshots, VALUES(airshots)), "
+        ... "bonusPoints = GREATEST(bonusPoints, VALUES(bonusPoints)), "
         ... "medicKills = GREATEST(medicKills, VALUES(medicKills)), "
         ... "heavyKills = GREATEST(heavyKills, VALUES(heavyKills)), "
         ... "marketGardenHits = GREATEST(marketGardenHits, VALUES(marketGardenHits)), "
@@ -802,6 +807,7 @@ void QueueStatsSave(int client, int userId, bool forceSync)
         g_Stats[client].totalMedicDrops,
         g_Stats[client].totalUberDrops,
         g_Stats[client].totalAirshots,
+        g_Stats[client].bonusPoints,
         g_Stats[client].totalMedicKills,
         g_Stats[client].totalHeavyKills,
         g_Stats[client].totalMarketGardenHits,

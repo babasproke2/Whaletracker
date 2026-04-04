@@ -69,15 +69,27 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             int custom = event.GetInt("customkill");
             bool backstab = (custom == TF_CUSTOM_BACKSTAB);
             bool medicDrop = IsMedicDrop(victim);
+            bool awardedBonusPoints = false;
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
+            int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
+            if (attackerCombined > WHALE_POINTS_MIN_KD_SUM && checkPointsDiff(victim, attacker)) // Checking if the victim had better whalepoints than attacker
+            {
+                g_Stats[attacker].bonusPoints += 3;
+                g_MapStats[attacker].bonusPoints += 3;
+                awardedBonusPoints = true;
+            }
             if (victimClass == TF_CLASS_MEDIC)
                 g_Stats[attacker].totalMedicKills++;
             if (victimClass == TF_CLASS_HEAVY)
                 g_Stats[attacker].totalHeavyKills++;
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
+            if (awardedBonusPoints)
+            {
+                CPrintToChat(attacker, "+3 {magenta}Bonus Points{default} for killing %N", victim);
+            }
         }
 
         if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))

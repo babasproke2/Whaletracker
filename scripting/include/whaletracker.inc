@@ -32,6 +32,7 @@ void ResetStatsStruct(WhaleStats stats, bool resetIdentity)
     stats.totalUbers = 0;
     stats.totalMedicDrops = 0;
     stats.totalAirshots = 0;
+    stats.bonusPoints = 0;
     stats.totalMarketGardenHits = 0;
     stats.totalHeadshots = 0;
     stats.totalBackstabs = 0;
@@ -1427,6 +1428,22 @@ bool WhaleTracker_CheckDamageGate(int client, int damage)
         return true;
     }
     return false;
+}
+
+bool checkPointsDiff(int client1, int client2, float minimumRatio = 1.15)
+{
+    if (!IsValidClient(client1) || !IsValidClient(client2))
+        return false;
+
+    int points1 = GetWhalePointsForClient(client1);
+    int points2 = GetWhalePointsForClient(client2);
+
+    if (points1 < 1)
+        return false;
+    if (points2 < 1)
+        return false;
+
+    return (float(points1) / float(points2)) >= minimumRatio;
 }
 
 void BuildWeaponAccuracySegment(const WhaleStats stats, char[] buffer, int maxlen)
