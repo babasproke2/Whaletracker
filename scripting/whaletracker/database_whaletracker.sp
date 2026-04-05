@@ -694,7 +694,6 @@ bool HasMapActivity(WhaleStats stats)
         || stats.totalHealing > 0
         || stats.totalDamage > 0
         || stats.totalDamageTaken > 0
-        || stats.bonusPoints > 0
         || stats.totalHeadshots > 0
         || stats.totalBackstabs > 0
         || stats.totalUberDrops > 0

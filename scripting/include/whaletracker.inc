@@ -74,7 +74,6 @@ void ResetMapStats(int client)
         strcopy(g_MapStats[client].steamId, sizeof(g_MapStats[client].steamId), g_Stats[client].steamId);
     }
     g_MapStats[client].connectTime = GetEngineTime();
-    g_MapStats[client].lastSeen = g_Stats[client].lastSeen;
 }
 
 void ResetRuntimeStats(int client)
@@ -92,7 +91,6 @@ void TouchClientLastSeen(int client)
 
     int now = GetTime();
     g_Stats[client].lastSeen = now;
-    g_MapStats[client].lastSeen = now;
     WhaleTracker_RefreshClientTrackingState(client);
 }
 
