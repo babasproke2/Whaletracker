@@ -1428,20 +1428,29 @@ bool WhaleTracker_CheckDamageGate(int client, int damage)
     return false;
 }
 
-bool checkPointsDiff(int client1, int client2, float minimumRatio = 1.15)
+int checkPointsDiff(int client1, int client2)
 {
     if (!IsValidClient(client1) || !IsValidClient(client2))
-        return false;
-
+        return 0;
     int points1 = GetWhalePointsForClient(client1);
     int points2 = GetWhalePointsForClient(client2);
-
+    if (points1 <= points2)
+        return 0;
     if (points1 < 1)
-        return false;
+        return 0;
     if (points2 < 1)
-        return false;
+        return 0;
 
-    return (float(points1) / float(points2)) >= minimumRatio;
+    float diff = (float(points1) - float(points2)) / float(points2) * 100.0;
+
+    if (diff > 20.0)
+        return 3;
+    if (diff >= 16.0)
+        return 2;
+    if (diff >= 10.0)
+        return 1;
+
+    return 0;
 }
 
 void BuildWeaponAccuracySegment(const WhaleStats stats, char[] buffer, int maxlen)
