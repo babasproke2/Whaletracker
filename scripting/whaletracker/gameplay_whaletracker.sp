@@ -69,15 +69,20 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             int custom = event.GetInt("customkill");
             bool backstab = (custom == TF_CUSTOM_BACKSTAB);
             bool medicDrop = IsMedicDrop(victim);
-            bool awardedBonusPoints = false;
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
             int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
-            if (attackerCombined > WHALE_POINTS_MIN_KD_SUM && checkPointsDiff(victim, attacker)) // Checking if the victim had better whalepoints than attacker
+            if (attackerCombined > WHALE_POINTS_MIN_KD_SUM)
             {
-                g_Stats[attacker].bonusPoints += 2;
-                awardedBonusPoints = true;
+                int pointsDiff = checkPointsDiff(victim, attacker);
+                if (pointsDiff > 0)
+                {
+                    g_Stats[attacker].bonusPoints += pointsDiff;
+                    char colorTag[32];
+                    GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
+                    CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
+                }
             }
             if (victimClass == TF_CLASS_MEDIC)
                 g_Stats[attacker].totalMedicKills++;
@@ -85,12 +90,6 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
                 g_Stats[attacker].totalHeavyKills++;
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
-            if (awardedBonusPoints)
-            {
-                char colorTag[32];
-                GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
-                CPrintToChat(attacker, "+2 {magenta}Bonus Points{default} for killing {%s}%N{default}", colorTag, victim);
-            }
         }
 
         if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))
@@ -120,7 +119,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         return Plugin_Continue;
 
     int damageInt = RoundToFloor(damage);
-    if (damageInt < 0)
+    if (damageInt < 0 || damageInt > 500)
     {
         damageInt = 0;
     }
