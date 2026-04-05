@@ -173,7 +173,7 @@ public Action Command_ShowBonusPoints(int client, int args)
         return Plugin_Handled;
     }
 
-    CPrintToChat(client, "{green}[WhaleTracker]{default} Bonus points: {magenta}%d{default}\nGet bonus points by killing players with a score 15% or higher than yours;\nYou can also get bonus points from {magenta}!missions", g_Stats[client].bonusPoints);
+    CPrintToChat(client, "{green}[WhaleTracker]{default} Bonus points: {magenta}%d{default}\nGet bonus points by killing players with a score above 15%% higher than yours;\nYou can also get bonus points from {magenta}!missions", g_Stats[client].bonusPoints);
     return Plugin_Handled;
 }
 
@@ -1071,26 +1071,15 @@ public any Native_WhaleTracker_GiveBonusPoints(Handle plugin, int numParams)
     int client = GetNativeCell(1);
     int amount = GetNativeCell(2);
     if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client) || amount == 0)
-    {
         return 0;
-    }
 
     if (!WhaleTracker_AreClientStatsReady(client))
-    {
         return 0;
-    }
 
     g_Stats[client].bonusPoints += amount;
-    g_MapStats[client].bonusPoints += amount;
 
     if (g_Stats[client].bonusPoints < 0)
-    {
         g_Stats[client].bonusPoints = 0;
-    }
-    if (g_MapStats[client].bonusPoints < 0)
-    {
-        g_MapStats[client].bonusPoints = 0;
-    }
 
     MarkClientDirty(client);
     return g_Stats[client].bonusPoints;

@@ -76,8 +76,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
             if (attackerCombined > WHALE_POINTS_MIN_KD_SUM && checkPointsDiff(victim, attacker)) // Checking if the victim had better whalepoints than attacker
             {
-                g_Stats[attacker].bonusPoints += 3;
-                g_MapStats[attacker].bonusPoints += 3;
+                g_Stats[attacker].bonusPoints += 2;
                 awardedBonusPoints = true;
             }
             if (victimClass == TF_CLASS_MEDIC)
@@ -90,7 +89,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             {
                 char colorTag[32];
                 GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
-                CPrintToChat(attacker, "+3 {magenta}Bonus Points{default} for killing {%s}%N{default}", colorTag, victim);
+                CPrintToChat(attacker, "+2 {magenta}Bonus Points{default} for killing {%s}%N{default}", colorTag, victim);
             }
         }
 
