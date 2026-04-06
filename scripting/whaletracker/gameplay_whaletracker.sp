@@ -56,76 +56,66 @@ public void OnProjectileTouch(int entity, int other)
 public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
     int victim = GetClientOfUserId(event.GetInt("userid"));
-    if (!IsValidClient(victim))
-    {
-        return;
-    }
-
-    if (GetUserFlagBits(victim) & 32)
-    {
-        return;
-    }
-
     int attacker = GetClientOfUserId(event.GetInt("attacker"));
     int assister = GetClientOfUserId(event.GetInt("assister"));
-    bool victimTracked = WhaleTracker_IsTrackingEnabled(victim);
+    int deathFlags = GetUserFlagBits(victim);
+    int victimClass = view_as<int>(TF2_GetPlayerClass(victim));
     bool attackerScoredMedicDrop = false;
 
-    if (IsValidClient(attacker) && attacker != victim && WhaleTracker_IsTrackingEnabled(attacker))
+    if (!(deathFlags & 32))
     {
-        int victimClass = view_as<int>(TF2_GetPlayerClass(victim));
-        int custom = event.GetInt("customkill");
-        bool backstab = (custom == TF_CUSTOM_BACKSTAB);
-        bool medicDrop = IsMedicDrop(victim);
-
-        ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
-        ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
-        int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
-        if (attackerCombined > WHALE_POINTS_MIN_KD_SUM)
+        if (IsValidClient(attacker) && attacker != victim && WhaleTracker_IsTrackingEnabled(attacker))
         {
-            int pointsDiff = checkPointsDiff(victim, attacker);
-            if (pointsDiff > 0)
+            int custom = event.GetInt("customkill");
+            bool backstab = (custom == TF_CUSTOM_BACKSTAB);
+            bool medicDrop = IsMedicDrop(victim);
+
+            ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
+            ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
+            int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
+            if (attackerCombined > WHALE_POINTS_MIN_KD_SUM)
             {
-                g_Stats[attacker].bonusPoints += pointsDiff;
-                char colorTag[32];
-                GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
-                CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
+                int pointsDiff = checkPointsDiff(victim, attacker);
+                if (pointsDiff > 0)
+                {
+                    g_Stats[attacker].bonusPoints += pointsDiff;
+                    char colorTag[32];
+                    GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
+                    CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
+                }
             }
+            if (victimClass == TF_CLASS_MEDIC)
+                g_Stats[attacker].totalMedicKills++;
+            if (victimClass == TF_CLASS_HEAVY)
+                g_Stats[attacker].totalHeavyKills++;
+            attackerScoredMedicDrop = medicDrop;
+            MarkClientDirty(attacker);
         }
-        if (victimClass == TF_CLASS_MEDIC)
-            g_Stats[attacker].totalMedicKills++;
-        if (victimClass == TF_CLASS_HEAVY)
-            g_Stats[attacker].totalHeavyKills++;
-        attackerScoredMedicDrop = medicDrop;
-        MarkClientDirty(attacker);
-    }
 
-    if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))
-    {
-        ApplyAssistStats(g_Stats[assister]);
-        ApplyAssistStats(g_MapStats[assister]);
-        MarkClientDirty(assister);
-    }
-
-    if (victimTracked)
-    {
-        if (attackerScoredMedicDrop)
+        if (IsValidClient(assister) && assister != victim && WhaleTracker_IsTrackingEnabled(assister))
         {
-            g_Stats[victim].totalUberDrops++;
-            g_MapStats[victim].totalUberDrops++;
+            ApplyAssistStats(g_Stats[assister]);
+            ApplyAssistStats(g_MapStats[assister]);
+            MarkClientDirty(assister);
         }
-        ApplyDeathStats(g_Stats[victim]);
-        ApplyDeathStats(g_MapStats[victim]);
-        MarkClientDirty(victim);
+
+        if (IsValidClient(victim) && WhaleTracker_IsTrackingEnabled(victim))
+        {
+            if (attackerScoredMedicDrop)
+            {
+                g_Stats[victim].totalUberDrops++;
+                g_MapStats[victim].totalUberDrops++;
+            }
+            ApplyDeathStats(g_Stats[victim]);
+            ApplyDeathStats(g_MapStats[victim]);
+            MarkClientDirty(victim);
+        }
     }
 }
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom)
 {
     if (attacker == victim)
-        return Plugin_Continue;
-
-    if (damage <= 0.0)
         return Plugin_Continue;
 
     int damageInt = RoundToFloor(damage);
@@ -149,16 +139,17 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         return Plugin_Continue;
     }
 
-    if (CheckIfAfterburn(damagecustom) || CheckIfBleedDmg(damagetype))
-        return Plugin_Continue;
-
-    bool attackerTracked = WhaleTracker_IsTrackingEnabled(attacker);
-    bool victimTracked = WhaleTracker_IsTrackingEnabled(victim);
     bool isHeadshot = (damagecustom == TF_CUSTOM_HEADSHOT || damagecustom == TF_CUSTOM_HEADSHOT_DECAPITATION);
-    if (isHeadshot && attackerTracked)
+    if (isHeadshot && IsValidClient(attacker) && !IsFakeClient(attacker))
     {
         RecordHeadshotEvent(attacker);
     }
+
+    if (CheckIfAfterburn(damagecustom) || CheckIfBleedDmg(damagetype))
+        return Plugin_Continue;
+
+    if (damage <= 0.0)
+        return Plugin_Continue;
 
     bool wasDirectHit = false;
     if (IsValidClient(victim))
@@ -167,7 +158,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         g_bPlayerTakenDirectHit[victim] = false;
     }
 
-    if (attackerTracked)
+    if (IsValidClient(attacker) && !IsFakeClient(attacker) && WhaleTracker_IsTrackingEnabled(attacker))
     {
         if (IsSupstatsAirshot(attacker, victim, weapon, wasDirectHit))
         {
@@ -204,7 +195,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         MarkClientDirty(attacker);
     }
 
-    if (victimTracked)
+    if (IsValidClient(victim) && !IsFakeClient(victim) && WhaleTracker_IsTrackingEnabled(victim))
     {
         g_Stats[victim].totalDamageTaken += damageInt;
         g_MapStats[victim].totalDamageTaken += damageInt;
@@ -340,17 +331,24 @@ bool IsMarketGardenerWeapon(int weapon)
 
 bool IsMarketGardenerHit(int attacker, int weapon)
 {
-    if (!IsValidClient(attacker))
+    bool validAttacker = IsValidClient(attacker);
+    bool inExplosiveJump = validAttacker ? g_bInExplosiveJump[attacker] : false;
+
+    if (!inExplosiveJump)
     {
         return false;
     }
 
-    if (!g_bInExplosiveJump[attacker])
+    if (!validAttacker)
     {
         return false;
     }
 
-    return IsMarketGardenerWeapon(weapon);
+    if (IsMarketGardenerWeapon(weapon))
+    {
+        return true;
+    }
+    return false;
 }
 
 float DistanceAboveGroundBox(int victim)

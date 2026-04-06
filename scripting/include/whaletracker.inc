@@ -1357,14 +1357,14 @@ bool TrackAccuracyEvent(int client, int weapon, bool isHit)
         return false;
     }
 
-    int classId = GetClientTfClass(client);
-    if (classId <= 0)
+    int weaponCategory = ResolveAccuracyWeaponCategory(weapon);
+    if (weaponCategory <= view_as<int>(WeaponCategory_None) || weaponCategory > WEAPON_CATEGORY_COUNT)
     {
         return false;
     }
 
-    int weaponCategory = ResolveAccuracyWeaponCategory(weapon);
-    if (weaponCategory <= view_as<int>(WeaponCategory_None) || weaponCategory > WEAPON_CATEGORY_COUNT)
+    int classId = GetClientTfClass(client);
+    if (classId <= 0)
     {
         return false;
     }

@@ -798,7 +798,18 @@ int GetWhalePointsForStats(const WhaleStats stats)
 
 int GetWhalePointsForClient(int client)
 {
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return 0;
+    }
+
     if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return 0;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
     {
         return 0;
     }
@@ -837,17 +848,6 @@ int GetWhalePointsForClient(int client)
     }
     else
     {
-        if (!g_bDatabaseReady || g_hDatabase == null)
-        {
-            return 0;
-        }
-
-        EnsureClientSteamId(client);
-        if (g_Stats[client].steamId[0] == '\0')
-        {
-            return 0;
-        }
-
         char escapedSteamId[STEAMID64_LEN * 2];
         EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
 
@@ -972,12 +972,12 @@ void EnsureClientStatsLoadedForPoints(int client)
 
 int GetWhalePointsRankForClient(int client)
 {
-    if (client <= 0 || client > MaxClients || !IsClientConnected(client))
+    if (!g_bDatabaseReady || g_hDatabase == null)
     {
         return 0;
     }
 
-    if (!g_bDatabaseReady || g_hDatabase == null)
+    if (client <= 0 || client > MaxClients || !IsClientConnected(client))
     {
         return 0;
     }
