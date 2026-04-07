@@ -1102,3 +1102,63 @@ public any Native_WhaleTracker_SpendBonusPoints(Handle plugin, int numParams)
     MarkClientDirty(client);
     return true;
 }
+
+public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)
+{
+    char steamId[STEAMID64_LEN];
+    GetNativeString(1, steamId, sizeof(steamId));
+
+    int maxlen = GetNativeCell(3);
+    if (maxlen <= 0)
+    {
+        return false;
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null || steamId[0] == '\0')
+    {
+        SetNativeString(2, "", maxlen, true);
+        return false;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char query[768];
+    Format(query, sizeof(query),
+        "SELECT COALESCE("
+        ... "NULLIF(w.cached_personaname, ''), "
+        ... "NULLIF(w.personaname, ''), "
+        ... "NULLIF(pc.name, ''), "
+        ... "''"
+        ... ") "
+        ... "FROM (SELECT '%s' AS steamid) s "
+        ... "LEFT JOIN whaletracker w ON w.steamid = s.steamid "
+        ... "LEFT JOIN whaletracker_points_cache pc ON pc.steamid = s.steamid "
+        ... "LIMIT 1",
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] LastRecordedName query failed: %s", error);
+        SetNativeString(2, "", maxlen, true);
+        return false;
+    }
+
+    char name[256];
+    name[0] = '\0';
+    bool found = false;
+
+    if (results.FetchRow())
+    {
+        results.FetchString(0, name, sizeof(name));
+        TrimString(name);
+        found = (name[0] != '\0');
+    }
+
+    delete results;
+    SetNativeString(2, name, maxlen, true);
+    return found;
+}
