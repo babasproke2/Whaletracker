@@ -53,6 +53,7 @@ public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
     CreateNative("WhaleTracker_AreStatsLoaded", Native_WhaleTracker_AreStatsLoaded);
     CreateNative("WhaleTracker_GetWhalePoints", Native_WhaleTracker_GetWhalePoints);
     CreateNative("WhaleTracker_GiveBonusPoints", Native_WhaleTracker_GiveBonusPoints);
+    CreateNative("WhaleTracker_SpendBonusPoints", Native_WhaleTracker_SpendBonusPoints);
     return APLRes_Success;
 }
 
