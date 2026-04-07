@@ -1114,7 +1114,45 @@ public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)
         return false;
     }
 
-    if (!g_bDatabaseReady || g_hDatabase == null || steamId[0] == '\0')
+    if (steamId[0] == '\0')
+    {
+        SetNativeString(2, "", maxlen, true);
+        return false;
+    }
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        char clientSteamId[STEAMID64_LEN];
+        if (!GetClientAuthId(i, AuthId_SteamID64, clientSteamId, sizeof(clientSteamId)))
+        {
+            continue;
+        }
+
+        if (!StrEqual(clientSteamId, steamId, false))
+        {
+            continue;
+        }
+
+        char connectedName[256];
+        if (GetClientName(i, connectedName, sizeof(connectedName)))
+        {
+            TrimString(connectedName);
+            if (connectedName[0] != '\0')
+            {
+                SetNativeString(2, connectedName, maxlen, true);
+                return true;
+            }
+        }
+
+        break;
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
     {
         SetNativeString(2, "", maxlen, true);
         return false;
