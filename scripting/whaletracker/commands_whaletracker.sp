@@ -1008,18 +1008,9 @@ public any Native_WhaleTracker_GiveBonusPoints(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
     int amount = GetNativeCell(2);
-    if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client) || amount == 0)
+    if (!ApplyBonusPoints(client, amount, false, false, 1.0))
         return 0;
 
-    if (!WhaleTracker_AreClientStatsReady(client))
-        return 0;
-
-    g_Stats[client].bonusPoints += amount;
-
-    if (g_Stats[client].bonusPoints < 0)
-        g_Stats[client].bonusPoints = 0;
-
-    MarkClientDirty(client);
     return g_Stats[client].bonusPoints;
 }
 
@@ -1027,18 +1018,10 @@ public any Native_WhaleTracker_SpendBonusPoints(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
     int amount = GetNativeCell(2);
-    if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client) || amount <= 0)
+    if (amount <= 0)
         return false;
 
-    if (!WhaleTracker_AreClientStatsReady(client))
-        return false;
-
-    if (g_Stats[client].bonusPoints < amount)
-        return false;
-
-    g_Stats[client].bonusPoints -= amount;
-    MarkClientDirty(client);
-    return true;
+    return ApplyBonusPoints(client, -amount, false, false, 1.0);
 }
 
 public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)

@@ -72,23 +72,18 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
-            int attackerCombined = g_Stats[attacker].kills + g_Stats[attacker].deaths;
-            if (attackerCombined > WHALE_POINTS_MIN_KD_SUM)
-            {
-                int pointsDiff = checkPointsDiff(victim, attacker);
-                if (pointsDiff > 0)
-                {
-                    g_Stats[attacker].bonusPoints += pointsDiff;
-                    char colorTag[32];
-                    GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
-                    //CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
-                    //CPrintToChat(attacker, "{magenta}[Bonus Points] {lightgreen}+%i", pointsDiff);
-                }
-            }
+            int pointsDiff = checkPointsDiff(victim, attacker);
+            ApplyBonusPoints(attacker, pointsDiff, true, false, 1.0, "points_diff", victim);
             if (victimClass == TF_CLASS_MEDIC)
+            {
                 g_Stats[attacker].totalMedicKills++;
+                ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "medic_kill", victim);
+            }
             if (victimClass == TF_CLASS_HEAVY)
+            {
                 g_Stats[attacker].totalHeavyKills++;
+                ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "heavy_kill", victim);
+            }
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
         }
@@ -164,6 +159,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         if (IsSupstatsAirshot(attacker, victim, weapon, wasDirectHit))
         {
             g_Stats[attacker].totalAirshots += 1;
+            ApplyBonusPoints(attacker, 1, true, false, 1.0, "airshot");
             if (g_hAirshotForward != null)
             {
                 Call_StartForward(g_hAirshotForward);

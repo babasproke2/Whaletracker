@@ -1453,6 +1453,100 @@ int checkPointsDiff(int client1, int client2)
     return 0;
 }
 
+void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
+{
+    label[0] = '\0';
+
+    if (StrEqual(type, "airshot", false))
+    {
+        strcopy(label, maxlen, "Airshot");
+        return;
+    }
+
+    if (StrEqual(type, "medic_kill", false))
+    {
+        strcopy(label, maxlen, "Medic Kill");
+        return;
+    }
+
+    if (StrEqual(type, "heavy_kill", false))
+    {
+        strcopy(label, maxlen, "Heavy Kill");
+        return;
+    }
+
+    if (StrEqual(type, "medic_drop", false))
+    {
+        strcopy(label, maxlen, "Medic Drop");
+        return;
+    }
+
+    if (StrEqual(type, "airshot_kill", false))
+    {
+        strcopy(label, maxlen, "Airshot Kill");
+        return;
+    }
+}
+
+bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
+{
+    if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client) || points < 1)
+        return false;
+
+    if (!WhaleTracker_AreClientStatsReady(client))
+        return false;
+
+    if (randomChance < 0.1)
+        randomChance = 0.1;
+    else if (randomChance > 1.0)
+        randomChance = 1.0;
+
+    if (GetRandomFloat(0.0, 1.0) > randomChance)
+        return false;
+
+    if (points < 0 && g_Stats[client].bonusPoints < -points)
+        return false;
+
+    g_Stats[client].bonusPoints += points;
+    if (g_Stats[client].bonusPoints < 0)
+        g_Stats[client].bonusPoints = 0;
+
+    MarkClientDirty(client);
+
+    if (playSound)
+    {
+        if (LibraryExists("saysounds"))
+            SaySounds_PlayCommand(client, WT_BONUS_POINTS_SOUND);
+    }
+
+    if (!chatAlert)
+        return true;
+
+    int absPoints = (points < 0) ? -points : points;
+    char sign[2];
+    sign[0] = (points < 0) ? '-' : '+';
+    sign[1] = '\0';
+
+    if (StrEqual(type, "points_diff", false) && IsValidClient(target))
+    {
+        char colorTag[32];
+        GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
+        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {%s}%N{default}", sign, absPoints, colorTag, target);
+        return true;
+    }
+
+    char label[64];
+    GetBonusPointsTypeLabel(type, label, sizeof(label));
+    if (label[0] != '\0')
+    {
+        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for {gold}%s", sign, absPoints, label);
+        return true;
+    }
+
+    CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i", sign, absPoints);
+    return true;
+}
+
 void BuildWeaponAccuracySegment(const WhaleStats stats, char[] buffer, int maxlen)
 {
     Format(buffer, maxlen,

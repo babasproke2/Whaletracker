@@ -25,6 +25,7 @@
 #define WHALE_POINTS_MIN_KD_SUM 1000
 #define WHALE_RANK_MIN_KD_SUM 200
 #define WHALE_RANK_MIN_PLAYTIME_SECONDS 10800
+#define WT_BONUS_POINTS_SOUND "gain_xp"
 #define WHALE_LEADERBOARD_PAGE_SIZE 10
 #define WT_MARKET_GARDENER_DEF_INDEX 416
 #define WT_HANDSHAKE_DEF_INDEX 609
@@ -39,6 +40,7 @@
 #define TF_CLASS_MEDIC          5
 
 native int Filters_GetChatName(int client, char[] buffer, int maxlen);
+native int SaySounds_PlayCommand(int client, const char[] commandName);
 forward bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync);
 forward void WhaleTracker_RustInit();
 forward void WhaleTracker_RustFlushSqlBatch();
@@ -50,6 +52,7 @@ public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
     MarkNativeAsOptional("SDKUnhook");
     MarkNativeAsOptional("SteamWorks_GetPublicIP");
     MarkNativeAsOptional("Filters_GetChatName");
+    MarkNativeAsOptional("SaySounds_PlayCommand");
     RegPluginLibrary("whaletracker");
     CreateNative("WhaleTracker_GetCumulativeKills", Native_WhaleTracker_GetCumulativeKills);
     CreateNative("WhaleTracker_AreStatsLoaded", Native_WhaleTracker_AreStatsLoaded);
