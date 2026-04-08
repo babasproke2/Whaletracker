@@ -233,6 +233,7 @@ bool g_bShuttingDown = false;
 Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
+Handle g_hPointsCacheRefreshTimer = null;
 Handle g_hAirshotForward = null;
 
 char g_SaveQueryBuffers[MAX_CONCURRENT_SAVE_QUERIES][SAVE_QUERY_MAXLEN];

@@ -123,6 +123,11 @@ public void OnPluginStart()
         CloseHandle(g_hPeriodicSaveTimer);
     }
     g_hPeriodicSaveTimer = CreateTimer(30.0, Timer_GlobalSave, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    if (g_hPointsCacheRefreshTimer != null)
+    {
+        CloseHandle(g_hPointsCacheRefreshTimer);
+    }
+    g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
 
     g_hAirshotForward = CreateGlobalForward("WhaleTracker_OnAirshot", ET_Ignore, Param_Cell, Param_Cell);
 
@@ -179,6 +184,20 @@ public void OnMapEnd()
     FlushSaveQueueSync();
     FinalizeCurrentMatch(false);
     WhaleTracker_RustFlushSqlBatch();
+}
+
+public Action Timer_RefreshWhalePointsCacheStartup(Handle timer, any data)
+{
+    g_hPointsCacheRefreshTimer = null;
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
+        return Plugin_Stop;
+    }
+
+    RefreshWhalePointsCacheAll();
+    return Plugin_Stop;
 }
 
 public void OnPluginEnd()
@@ -261,6 +280,7 @@ public void OnPluginEnd()
     // invalid by the time OnPluginEnd runs.
     g_hOnlineTimer = null;
     g_hPeriodicSaveTimer = null;
+    g_hPointsCacheRefreshTimer = null;
     g_hReconnectTimer = null;
     g_hSavePumpTimer = null;
 
@@ -441,7 +461,7 @@ void QueryPointsCacheJoinMessage(int client)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT points, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+        "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
     g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, GetClientUserId(client));
 }
@@ -460,6 +480,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     }
 
     int points = 0;
+    int rank = 0;
     char colorTag[32];
     char cachedName[128];
     char cachedPrename[128];
@@ -470,14 +491,19 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (results != null && results.FetchRow())
     {
         points = results.FetchInt(0);
+        rank = results.FetchInt(1);
         if (points < 0)
         {
             points = 0;
         }
+        if (rank < 0)
+        {
+            rank = 0;
+        }
 
-        results.FetchString(1, colorTag, sizeof(colorTag));
-        results.FetchString(2, cachedName, sizeof(cachedName));
-        results.FetchString(3, cachedPrename, sizeof(cachedPrename));
+        results.FetchString(2, colorTag, sizeof(colorTag));
+        results.FetchString(3, cachedName, sizeof(cachedName));
+        results.FetchString(4, cachedPrename, sizeof(cachedPrename));
         TrimString(colorTag);
         TrimString(cachedName);
         TrimString(cachedPrename);
@@ -500,21 +526,6 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (colorTag[0] == '\0')
     {
         GetClientFiltersNameColorTag(client, colorTag, sizeof(colorTag));
-    }
-
-    int rank = GetWhalePointsRankForClient(client);
-    if (rank < 0)
-    {
-        rank = 0;
-    }
-
-    if (rank > 0 && points <= 0)
-    {
-        points = GetWhalePointsForClient(client);
-        if (points < 0)
-        {
-            points = 0;
-        }
     }
 
     if (rank > 0)
