@@ -1443,9 +1443,9 @@ int checkPointsDiff(int client1, int client2)
 
     float diff = (float(points1) - float(points2)) / float(points2) * 100.0;
 
-    if (diff > 20.0)
+    if (diff > 50.0)
         return 3;
-    if (diff >= 16.0)
+    if (diff >= 25.0)
         return 2;
     if (diff >= 10.0)
         return 1;
