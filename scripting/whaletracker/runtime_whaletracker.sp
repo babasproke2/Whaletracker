@@ -323,6 +323,7 @@ public void OnClientPutInServer(int client)
     }
 
     ResetRuntimeStats(client);
+    ResetClientCommandCaches(client);
     g_Stats[client].connectTime = GetEngineTime();
     g_MapStats[client].connectTime = GetEngineTime();
     g_KillSaveCounter[client] = 0;
@@ -387,6 +388,7 @@ public void OnClientDisconnect(int client)
     CacheWhalePointsOnDisconnect(client);
     RemoveOnlineStats(client);
     ResetAllStats(client);
+    ResetClientCommandCaches(client);
     g_KillSaveCounter[client] = 0;
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
@@ -423,7 +425,8 @@ public void OnClientPostAdminCheck(int client)
         return;
     }
 
-    QueryPointsCacheJoinMessage(client);
+    RequestClientPointsCacheQuery(client, true);
+    RequestFavoriteClassLoad(client);
 }
 
 /*void AnnounceDefaultJoin(int client)
@@ -436,7 +439,7 @@ public void OnClientPostAdminCheck(int client)
     //CPrintToChatAll("%N joined the game", client);
 }*/
 
-void QueryPointsCacheJoinMessage(int client)
+void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
 {
     if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client))
     {
@@ -452,27 +455,43 @@ void QueryPointsCacheJoinMessage(int client)
     EnsureClientSteamId(client);
     if (g_Stats[client].steamId[0] == '\0')
     {
-        //AnnounceDefaultJoin(client);
         return;
     }
 
+    if (g_bClientPointsCachePending[client])
+    {
+        return;
+    }
+    g_bClientPointsCachePending[client] = true;
+
     char escapedSteamId[STEAMID64_LEN * 2];
     EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    DataPack pack = new DataPack();
+    pack.WriteCell(GetClientUserId(client));
+    pack.WriteCell(announceJoin ? 1 : 0);
 
     char query[512];
     Format(query, sizeof(query),
         "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
-    g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, GetClientUserId(client));
+    g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, pack);
 }
 
 public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet results, const char[] error, any data)
 {
-    int client = GetClientOfUserId(data);
+    DataPack pack = view_as<DataPack>(data);
+    pack.Reset();
+    int client = GetClientOfUserId(pack.ReadCell());
+    bool announceJoin = (pack.ReadCell() != 0);
+    delete pack;
+
     if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client))
     {
         return;
     }
+
+    g_bClientPointsCachePending[client] = false;
 
     if (error[0] != '\0')
     {
@@ -509,33 +528,56 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         TrimString(cachedPrename);
     }
 
-    char displayName[128];
-    if (cachedPrename[0] != '\0')
+    g_bClientPointsCacheLoaded[client] = true;
+    g_iClientCachedPoints[client] = points;
+    g_iClientCachedRank[client] = rank;
+    strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
+    strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
+    strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
+
+    if (!announceJoin)
     {
-        strcopy(displayName, sizeof(displayName), cachedPrename);
+        return;
     }
-    else if (cachedName[0] != '\0')
+
+    char displayName[128];
+    bool useCachedDecorated = (colorTag[0] != '\0' && (cachedPrename[0] != '\0' || cachedName[0] != '\0'));
+    if (useCachedDecorated)
     {
-        strcopy(displayName, sizeof(displayName), cachedName);
+        if (cachedPrename[0] != '\0')
+        {
+            strcopy(displayName, sizeof(displayName), cachedPrename);
+        }
+        else
+        {
+            strcopy(displayName, sizeof(displayName), cachedName);
+        }
+    }
+    else if (GetFeatureStatus(FeatureType_Native, "Filters_GetChatName") == FeatureStatus_Available
+        && Filters_GetChatName(client, displayName, sizeof(displayName)) && displayName[0] != '\0')
+    {
+        TrimString(displayName);
     }
     else
     {
         GetClientName(client, displayName, sizeof(displayName));
     }
 
-    if (colorTag[0] == '\0')
-    {
-        GetClientFiltersNameColorTag(client, colorTag, sizeof(colorTag));
-    }
-
     if (rank > 0)
     {
-        CPrintToChatAll("{%s}%s{default} (%d Points, Rank #%d) joined the game", colorTag, displayName, points, rank);
-        PrintToServer("[WhaleTracker] %s (%d Points, Rank #%d, color=%s) joined the game", displayName, points, rank, colorTag);
+        if (useCachedDecorated)
+        {
+            CPrintToChatAll("{%s}%s{default} (%d Points, Rank #%d) joined the game", colorTag, displayName, points, rank);
+        }
+        else
+        {
+            CPrintToChatAll("%s{default} (%d Points, Rank #%d) joined the game", displayName, points, rank);
+        }
+        PrintToServer("[WhaleTracker] %s (%d Points, Rank #%d) joined the game", displayName, points, rank);
     }
     else
     {
-        CPrintToChatAll("{%s}%s{default} (Unranked) joined the game", colorTag, displayName);
-        PrintToServer("[WhaleTracker] %s (Unranked, color=%s) joined the game", displayName, colorTag);
+        CPrintToChatAll("%s{default} (Unranked) joined the game", displayName);
+        PrintToServer("[WhaleTracker] %s (Unranked) joined the game", displayName);
     }
 }

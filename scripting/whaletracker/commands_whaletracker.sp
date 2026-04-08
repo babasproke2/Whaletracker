@@ -89,43 +89,43 @@ public Action Command_ShowPoints(int client, int args)
     {
         if (!g_Stats[target].loaded)
         {
-            EnsureClientStatsLoadedForPoints(target);
+            RequestClientStateLoads(target);
+            RequestClientPointsCacheQuery(target);
+            char loadingName[128];
+            GetClientChatDisplayName(target, loadingName, sizeof(loadingName));
+            CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} stats are loading. Try again in a moment.", loadingName);
+            return Plugin_Handled;
         }
 
         int combined = g_Stats[target].kills + g_Stats[target].deaths;
         int playtime = (g_Stats[target].playtime > 0) ? g_Stats[target].playtime : 0;
-        char colorTagUnranked[32];
-        GetClientFiltersNameColorTag(target, colorTagUnranked, sizeof(colorTagUnranked));
-        float hours = float(playtime) / 3600.0;
-        CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", colorTagUnranked, target, WHALE_RANK_MIN_KD_SUM, combined, hours);
+        if (combined < WHALE_RANK_MIN_KD_SUM || playtime < WHALE_RANK_MIN_PLAYTIME_SECONDS)
+        {
+            char displayName[128];
+            GetClientChatDisplayName(target, displayName, sizeof(displayName));
+            float hours = float(playtime) / 3600.0;
+            CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", displayName, WHALE_RANK_MIN_KD_SUM, combined, hours);
+            return Plugin_Handled;
+        }
+
+        RequestClientPointsCacheQuery(target);
+        char loadingName[128];
+        GetClientChatDisplayName(target, loadingName, sizeof(loadingName));
+        CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} points cache is loading. Try again in a moment.", loadingName);
         return Plugin_Handled;
     }
 
-    char colorTag[32];
-    if (cachedColor[0] != '\0')
+    char displayName[192];
+    if (cachedColor[0] != '\0' && (cachedPrename[0] != '\0' || cachedName[0] != '\0'))
     {
-        strcopy(colorTag, sizeof(colorTag), cachedColor);
+        Format(displayName, sizeof(displayName), "{%s}%s", cachedColor, (cachedPrename[0] != '\0') ? cachedPrename : cachedName);
     }
     else
     {
-        GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
+        GetClientChatDisplayName(target, displayName, sizeof(displayName));
     }
 
-    char playerName[MAX_NAME_LENGTH];
-    if (cachedPrename[0] != '\0')
-    {
-        strcopy(playerName, sizeof(playerName), cachedPrename);
-    }
-    else if (cachedName[0] != '\0')
-    {
-        strcopy(playerName, sizeof(playerName), cachedName);
-    }
-    else
-    {
-        GetClientName(target, playerName, sizeof(playerName));
-    }
-
-    CPrintToChatAll("{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
+    CPrintToChatAll("{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
     if (g_Stats[target].loaded)
     {
         int lifetimeKills = g_Stats[target].kills;
@@ -178,43 +178,43 @@ public Action Command_ShowPointsMe(int client, int args)
     {
         if (!g_Stats[target].loaded)
         {
-            EnsureClientStatsLoadedForPoints(target);
+            RequestClientStateLoads(target);
+            RequestClientPointsCacheQuery(target);
+            char loadingName[128];
+            GetClientChatDisplayName(target, loadingName, sizeof(loadingName));
+            CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} stats are loading. Try again in a moment.", loadingName);
+            return Plugin_Handled;
         }
 
         int combined = g_Stats[target].kills + g_Stats[target].deaths;
         int playtime = (g_Stats[target].playtime > 0) ? g_Stats[target].playtime : 0;
-        char colorTagUnranked[32];
-        GetClientFiltersNameColorTag(target, colorTagUnranked, sizeof(colorTagUnranked));
-        float hours = float(playtime) / 3600.0;
-        CPrintToChat(client, "{green}[WhaleTracker]{default} {%s}%N{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", colorTagUnranked, target, WHALE_RANK_MIN_KD_SUM, combined, hours);
+        if (combined < WHALE_RANK_MIN_KD_SUM || playtime < WHALE_RANK_MIN_PLAYTIME_SECONDS)
+        {
+            char displayName[128];
+            GetClientChatDisplayName(target, displayName, sizeof(displayName));
+            float hours = float(playtime) / 3600.0;
+            CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", displayName, WHALE_RANK_MIN_KD_SUM, combined, hours);
+            return Plugin_Handled;
+        }
+
+        RequestClientPointsCacheQuery(target);
+        char loadingName[128];
+        GetClientChatDisplayName(target, loadingName, sizeof(loadingName));
+        CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} points cache is loading. Try again in a moment.", loadingName);
         return Plugin_Handled;
     }
 
-    char colorTag[32];
-    if (cachedColor[0] != '\0')
+    char displayName[192];
+    if (cachedColor[0] != '\0' && (cachedPrename[0] != '\0' || cachedName[0] != '\0'))
     {
-        strcopy(colorTag, sizeof(colorTag), cachedColor);
+        Format(displayName, sizeof(displayName), "{%s}%s", cachedColor, (cachedPrename[0] != '\0') ? cachedPrename : cachedName);
     }
     else
     {
-        GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
+        GetClientChatDisplayName(target, displayName, sizeof(displayName));
     }
 
-    char playerName[MAX_NAME_LENGTH];
-    if (cachedPrename[0] != '\0')
-    {
-        strcopy(playerName, sizeof(playerName), cachedPrename);
-    }
-    else if (cachedName[0] != '\0')
-    {
-        strcopy(playerName, sizeof(playerName), cachedName);
-    }
-    else
-    {
-        GetClientName(target, playerName, sizeof(playerName));
-    }
-
-    CPrintToChat(client, "{gold}[Whaletracker]{default} {%s}%s{default}'s Points: %d, Rank #%d", colorTag, playerName, points, rank);
+    CPrintToChat(client, "{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
     if (g_Stats[target].loaded)
     {
         int lifetimeKills = g_Stats[target].kills;
@@ -302,6 +302,10 @@ public Action Command_ShowLeaderboard(int client, int args)
 
     int offset = (page - 1) * WHALE_LEADERBOARD_PAGE_SIZE;
 
+    DataPack pack = new DataPack();
+    pack.WriteCell(GetClientUserId(client));
+    pack.WriteCell(page);
+
     char query[1024];
     Format(query, sizeof(query),
         "SELECT rank, points, COALESCE(NULLIF(prename,''), NULLIF(name,''), steamid), COALESCE(NULLIF(name_color,''), 'gold') "
@@ -311,20 +315,32 @@ public Action Command_ShowLeaderboard(int client, int args)
         ... "LIMIT %d OFFSET %d",
         WHALE_LEADERBOARD_PAGE_SIZE,
         offset);
+    g_hDatabase.Query(WhaleTracker_ShowLeaderboardCallback, query, pack);
+    return Plugin_Handled;
+}
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
+public void WhaleTracker_ShowLeaderboardCallback(Database db, DBResultSet results, const char[] error, any data)
+{
+    DataPack pack = view_as<DataPack>(data);
+    pack.Reset();
+    int client = GetClientOfUserId(pack.ReadCell());
+    int page = pack.ReadCell();
+    delete pack;
+
+    if (!IsValidClient(client) || IsFakeClient(client))
     {
-        char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        return;
+    }
+
+    if (error[0] != '\0')
+    {
         CPrintToChat(client, "{green}[WhaleTracker]{default} Failed to load leaderboard.");
         LogError("[WhaleTracker] Failed to load leaderboard: %s", error);
-        return Plugin_Handled;
+        return;
     }
 
     int rows = 0;
-
-    while (results.FetchRow())
+    while (results != null && results.FetchRow())
     {
         int rank = results.FetchInt(0);
         int points = results.FetchInt(1);
@@ -348,16 +364,14 @@ public Action Command_ShowLeaderboard(int client, int args)
         rows++;
         CPrintToChat(client, "#%d {%s}%s{default} %d", rank, colorTag, displayName, points);
     }
-    delete results;
 
     if (rows == 0)
     {
         CPrintToChat(client, "{green}[WhaleTracker]{default} No leaderboard entries on page %d.", page);
-        return Plugin_Handled;
+        return;
     }
 
     CPrintToChat(client, "Use !{gold}ranks %d{default} to view the next 10 ranks!", page + 1);
-    return Plugin_Handled;
 }
 
 void ShowFavoriteClassMenu(int client)
@@ -440,6 +454,47 @@ int ParseFavoriteClassName(const char[] className)
     return CLASS_UNKNOWN;
 }
 
+void ResetClientCommandCaches(int client)
+{
+    if (client <= 0 || client > MaxClients)
+    {
+        return;
+    }
+
+    g_bClientPointsCacheLoaded[client] = false;
+    g_bClientPointsCachePending[client] = false;
+    g_iClientCachedPoints[client] = 0;
+    g_iClientCachedRank[client] = 0;
+    g_sClientCachedName[client][0] = '\0';
+    g_sClientCachedColor[client][0] = '\0';
+    g_sClientCachedPrename[client][0] = '\0';
+
+    g_bFavoriteClassLoaded[client] = false;
+    g_bFavoriteClassPending[client] = false;
+    g_iFavoriteClassCache[client] = CLASS_UNKNOWN;
+}
+
+void GetClientChatDisplayName(int client, char[] buffer, int maxlen)
+{
+    buffer[0] = '\0';
+
+    if (client > 0 && client <= MaxClients
+        && IsClientConnected(client)
+        && GetFeatureStatus(FeatureType_Native, "Filters_GetChatName") == FeatureStatus_Available
+        && Filters_GetChatName(client, buffer, maxlen)
+        && buffer[0] != '\0')
+    {
+        TrimString(buffer);
+        return;
+    }
+
+    if (client > 0 && client <= MaxClients && IsClientConnected(client))
+    {
+        GetClientName(client, buffer, maxlen);
+        TrimString(buffer);
+    }
+}
+
 void GetFavoriteClassDisplayName(int favoriteClass, char[] buffer, int maxlen)
 {
     switch (favoriteClass)
@@ -492,6 +547,7 @@ void PrintCurrentFavoriteClass(int client)
     int favoriteClass = GetFavoriteClassForClient(client);
     if (favoriteClass == CLASS_UNKNOWN)
     {
+        RequestFavoriteClassLoad(client, true);
         return;
     }
 
@@ -502,42 +558,17 @@ void PrintCurrentFavoriteClass(int client)
 
 int GetFavoriteClassForClient(int client)
 {
-    if (!g_bDatabaseReady || g_hDatabase == null)
+    if (client <= 0 || client > MaxClients || !IsClientConnected(client))
     {
         return CLASS_UNKNOWN;
     }
 
-    EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
+    if (!g_bFavoriteClassLoaded[client])
     {
         return CLASS_UNKNOWN;
     }
 
-    char escapedSteamId[STEAMID64_LEN * 2];
-    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
-
-    char query[192];
-    Format(query, sizeof(query),
-        "SELECT COALESCE(favorite_class, 0) FROM whaletracker WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
-
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
-        LogError("[WhaleTracker] Failed to load favorite class for %N: %s", client, error);
-        return CLASS_UNKNOWN;
-    }
-
-    int favoriteClass = CLASS_UNKNOWN;
-    if (SQL_HasResultSet(results) && results.FetchRow())
-    {
-        favoriteClass = results.FetchInt(0);
-    }
-
-    delete results;
-    return favoriteClass;
+    return g_iFavoriteClassCache[client];
 }
 
 void SetFavoriteClassForClient(int client, int favoriteClass)
@@ -574,12 +605,81 @@ void SetFavoriteClassForClient(int client, int favoriteClass)
         escapedSteamId,
         firstSeen,
         favoriteClass);
-
     QueueSaveQuery(query, GetClientUserId(client), false);
+    g_iFavoriteClassCache[client] = favoriteClass;
+    g_bFavoriteClassLoaded[client] = true;
+    g_bFavoriteClassPending[client] = false;
 
     char className[16];
     GetFavoriteClassDisplayName(favoriteClass, className, sizeof(className));
     CPrintToChat(client, "{green}[WhaleTracker]{default} Your favorite class is now {gold}%s{default}!", className);
+}
+
+void RequestFavoriteClassLoad(int client, bool echoAfterLoad = false)
+{
+    if (!IsValidClient(client) || IsFakeClient(client) || !g_bDatabaseReady || g_hDatabase == null || g_bFavoriteClassPending[client])
+    {
+        return;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return;
+    }
+
+    g_bFavoriteClassPending[client] = true;
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    DataPack pack = new DataPack();
+    pack.WriteCell(GetClientUserId(client));
+    pack.WriteCell(echoAfterLoad ? 1 : 0);
+
+    char query[192];
+    Format(query, sizeof(query),
+        "SELECT COALESCE(favorite_class, 0) FROM whaletracker WHERE steamid = '%s' LIMIT 1",
+        escapedSteamId);
+    g_hDatabase.Query(WhaleTracker_FavoriteClassLoadCallback, query, pack);
+}
+
+public void WhaleTracker_FavoriteClassLoadCallback(Database db, DBResultSet results, const char[] error, any data)
+{
+    DataPack pack = view_as<DataPack>(data);
+    pack.Reset();
+    int client = GetClientOfUserId(pack.ReadCell());
+    bool echoAfterLoad = (pack.ReadCell() != 0);
+    delete pack;
+
+    if (!IsValidClient(client) || IsFakeClient(client))
+    {
+        return;
+    }
+
+    g_bFavoriteClassPending[client] = false;
+
+    if (error[0] != '\0')
+    {
+        LogError("[WhaleTracker] Failed to load favorite class for %N: %s", client, error);
+        return;
+    }
+
+    int favoriteClass = CLASS_UNKNOWN;
+    if (results != null && results.FetchRow())
+    {
+        favoriteClass = results.FetchInt(0);
+    }
+
+    g_iFavoriteClassCache[client] = favoriteClass;
+    g_bFavoriteClassLoaded[client] = true;
+
+    if (echoAfterLoad && favoriteClass != CLASS_UNKNOWN)
+    {
+        char className[16];
+        GetFavoriteClassDisplayName(favoriteClass, className, sizeof(className));
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Your favorite class: {gold}%s{default}", className);
+    }
 }
 
 void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen)
@@ -630,7 +730,7 @@ void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen
     delete results;
 }
 
-bool GetCachedWhalePointsForSteamId(const char[] steamId, int &points, int &rank, char[] playerName, int playerNameLen, char[] colorTag, int colorTagLen, char[] prename, int prenameLen)
+bool GetCachedWhalePointsForClient(int client, int &points, int &rank, char[] playerName, int playerNameLen, char[] colorTag, int colorTagLen, char[] prename, int prenameLen)
 {
     points = 0;
     rank = 0;
@@ -638,61 +738,17 @@ bool GetCachedWhalePointsForSteamId(const char[] steamId, int &points, int &rank
     colorTag[0] = '\0';
     prename[0] = '\0';
 
-    if (!g_bDatabaseReady || g_hDatabase == null)
+    if (client <= 0 || client > MaxClients || !IsClientConnected(client) || !g_bClientPointsCacheLoaded[client])
     {
         return false;
     }
 
-    if (steamId[0] == '\0')
-    {
-        return false;
-    }
-
-    char escapedSteamId[STEAMID64_LEN * 2];
-    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
-
-    char query[512];
-    Format(query, sizeof(query),
-        "SELECT points, rank, name, name_color, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
-
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        return false;
-    }
-
-    bool found = false;
-    if (results.FetchRow())
-    {
-        points = results.FetchInt(0);
-        rank = results.FetchInt(1);
-        results.FetchString(2, playerName, playerNameLen);
-        results.FetchString(3, colorTag, colorTagLen);
-        results.FetchString(4, prename, prenameLen);
-        TrimString(playerName);
-        TrimString(colorTag);
-        TrimString(prename);
-        found = true;
-    }
-    delete results;
-    return found;
-}
-
-bool GetCachedWhalePointsForClient(int client, int &points, int &rank, char[] playerName, int playerNameLen, char[] colorTag, int colorTagLen, char[] prename, int prenameLen)
-{
-    if (client <= 0 || client > MaxClients || !IsClientConnected(client))
-    {
-        return false;
-    }
-
-    EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
-    {
-        return false;
-    }
-
-    return GetCachedWhalePointsForSteamId(g_Stats[client].steamId, points, rank, playerName, playerNameLen, colorTag, colorTagLen, prename, prenameLen);
+    points = g_iClientCachedPoints[client];
+    rank = g_iClientCachedRank[client];
+    strcopy(playerName, playerNameLen, g_sClientCachedName[client]);
+    strcopy(colorTag, colorTagLen, g_sClientCachedColor[client]);
+    strcopy(prename, prenameLen, g_sClientCachedPrename[client]);
+    return true;
 }
 
 void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerName, const char[] knownColor = "", int userId = 0)
@@ -751,7 +807,6 @@ void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerNam
         escapedSteamId,
         GetTime(),
         escapedSteamId);
-
     QueueSaveQuery(query, userId, false);
 }
 
@@ -817,6 +872,16 @@ public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResul
         return;
     }
 
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        RequestClientPointsCacheQuery(i);
+    }
+
     PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table.");
 }
 
@@ -851,49 +916,14 @@ void GetClientFiltersNameColorTag(int client, char[] colorTag, int maxlen)
 {
     strcopy(colorTag, maxlen, "gold");
 
-    if (!g_bDatabaseReady || g_hDatabase == null)
-    {
-        return;
-    }
-
     if (client <= 0 || client > MaxClients || !IsClientConnected(client))
     {
         return;
     }
 
-    EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
+    if (g_bClientPointsCacheLoaded[client] && g_sClientCachedColor[client][0] != '\0')
     {
-        return;
-    }
-
-    char escapedSteamId[STEAMID64_LEN * 2];
-    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
-
-    char query[192];
-    Format(query, sizeof(query),
-        "SELECT color FROM filters_namecolors WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
-
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results != null && SQL_HasResultSet(results) && results.FetchRow())
-    {
-        results.FetchString(0, colorTag, maxlen);
-        TrimString(colorTag);
-    }
-    delete results;
-
-    if (colorTag[0] != '\0')
-    {
-        return;
-    }
-
-    // Fallback: use WhaleTracker points cache color when filters table has no row.
-    GetNameColorTagForSteamId(g_Stats[client].steamId, colorTag, maxlen);
-
-    if (colorTag[0] == '\0')
-    {
-        strcopy(colorTag, maxlen, "gold");
+        strcopy(colorTag, maxlen, g_sClientCachedColor[client]);
     }
 }
 
@@ -1000,69 +1030,6 @@ int GetWhalePointsForClient(int client)
     return GetWhalePointsForStats(pointStats);
 }
 
-void EnsureClientStatsLoadedForPoints(int client)
-{
-    if (client <= 0 || client > MaxClients || !IsClientConnected(client))
-    {
-        return;
-    }
-
-    if (!g_bDatabaseReady || g_hDatabase == null || g_Stats[client].loaded)
-    {
-        return;
-    }
-
-    EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
-    {
-        return;
-    }
-
-    char escapedSteamId[STEAMID64_LEN * 2];
-    EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
-
-    char query[512];
-    Format(query, sizeof(query),
-        "SELECT first_seen, kills, deaths, healing, total_ubers, best_ubers_life, medic_drops, uber_drops, airshots, bonusPoints, medicKills, heavyKills, marketGardenHits, headshots, backstabs, best_killstreak, assists, playtime, damage_dealt, damage_taken, last_seen "
-        ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
-
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        return;
-    }
-
-    if (results.FetchRow())
-    {
-        g_Stats[client].firstSeenTimestamp = results.FetchInt(0);
-        FormatTime(g_Stats[client].firstSeen, sizeof(g_Stats[client].firstSeen), "%Y-%m-%d", g_Stats[client].firstSeenTimestamp);
-        g_Stats[client].kills = results.FetchInt(1);
-        g_Stats[client].deaths = results.FetchInt(2);
-        g_Stats[client].totalHealing = results.FetchInt(3);
-        g_Stats[client].totalUbers = results.FetchInt(4);
-        g_Stats[client].bestUbersLife = results.FetchInt(5);
-        g_Stats[client].totalMedicDrops = results.FetchInt(6);
-        g_Stats[client].totalUberDrops = results.FetchInt(7);
-        g_Stats[client].totalAirshots = results.FetchInt(8);
-        g_Stats[client].bonusPoints = results.FetchInt(9);
-        g_Stats[client].totalMedicKills = results.FetchInt(10);
-        g_Stats[client].totalHeavyKills = results.FetchInt(11);
-        g_Stats[client].totalMarketGardenHits = results.FetchInt(12);
-        g_Stats[client].totalHeadshots = results.FetchInt(13);
-        g_Stats[client].totalBackstabs = results.FetchInt(14);
-        g_Stats[client].bestKillstreak = results.FetchInt(15);
-        g_Stats[client].totalAssists = results.FetchInt(16);
-        g_Stats[client].playtime = results.FetchInt(17);
-        g_Stats[client].totalDamage = results.FetchInt(18);
-        g_Stats[client].totalDamageTaken = results.FetchInt(19);
-        g_Stats[client].lastSeen = results.FetchInt(20);
-        g_Stats[client].loaded = true;
-    }
-
-    delete results;
-}
-
 public any Native_WhaleTracker_GetCumulativeKills(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
@@ -1101,26 +1068,6 @@ public any Native_WhaleTracker_ApplyBonusPoints(Handle plugin, int numParams)
     int target = (numParams >= 7) ? GetNativeCell(7) : 0;
     float delay = (numParams >= 8) ? view_as<float>(GetNativeCell(8)) : 3.0;
     return ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target, delay);
-}
-
-public any Native_WhaleTracker_GiveBonusPoints(Handle plugin, int numParams)
-{
-    int client = GetNativeCell(1);
-    int amount = GetNativeCell(2);
-    if (!ApplyBonusPoints(client, amount, false, false, 1.0, "", 0, 0.0))
-        return 0;
-
-    return g_Stats[client].bonusPoints;
-}
-
-public any Native_WhaleTracker_SpendBonusPoints(Handle plugin, int numParams)
-{
-    int client = GetNativeCell(1);
-    int amount = GetNativeCell(2);
-    if (amount <= 0)
-        return false;
-
-    return ApplyBonusPoints(client, -amount, false, false, 1.0, "", 0, 0.0);
 }
 
 public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)

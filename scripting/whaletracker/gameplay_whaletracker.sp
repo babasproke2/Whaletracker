@@ -77,10 +77,16 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             if (victimClass == TF_CLASS_MEDIC)
             {
                 g_Stats[attacker].totalMedicKills++;
+                ApplyBonusPoints(attacker, 1, true, true, 1.0, "medic_kill");
+                if (medicDrop)
+                {
+                    ApplyBonusPoints(attacker, 1, true, true, 1.0, "medic_uber_drop_kill");
+                }
             }
             if (victimClass == TF_CLASS_HEAVY)
             {
                 g_Stats[attacker].totalHeavyKills++;
+                ApplyBonusPoints(attacker, 1, true, true, 1.0, "heavy_kill");
             }
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);

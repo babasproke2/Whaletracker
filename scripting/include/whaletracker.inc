@@ -1481,6 +1481,12 @@ void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
         return;
     }
 
+    if (StrEqual(type, "medic_uber_drop_kill", false))
+    {
+        strcopy(label, maxlen, "Medic Uber Drop Kill");
+        return;
+    }
+
     if (StrEqual(type, "airshot_kill", false))
     {
         strcopy(label, maxlen, "Airshot Kill");
@@ -1522,9 +1528,15 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
     if (!chatAlert)
         return true;
 
-    int absPoints = (points < 0) ? -points : points;
+    if (points < 0)
+    {
+        CPrintToChat(client, "{magenta}[BP]{limegreen}%i", points);
+        return true;
+    }
+
+    int absPoints = points;
     char sign[2];
-    sign[0] = (points < 0) ? '-' : '+';
+    sign[0] = '+';
     sign[1] = '\0';
 
     if (StrEqual(type, "points_diff", false) && IsValidClient(target))

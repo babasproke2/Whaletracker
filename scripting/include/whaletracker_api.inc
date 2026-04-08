@@ -53,24 +53,6 @@ stock bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, b
 }
 
 /**
- * Adds bonus points to a client and returns the new total.
- *
- * @param client        Client index.
- * @param amount        Bonus points to add. Negative values are allowed.
- * @return              New bonus point total, or 0 if unavailable.
- */
-native int WhaleTracker_GiveBonusPoints(int client, int amount);
-
-/**
- * Spends bonus points from a client if they have enough.
- *
- * @param client        Client index.
- * @param amount        Bonus points to spend. Must be positive.
- * @return              True on success.
- */
-native bool WhaleTracker_SpendBonusPoints(int client, int amount);
-
-/**
  * Resolves the best recorded name for a SteamID64.
  *
  * Lookup order:

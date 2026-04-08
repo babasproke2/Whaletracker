@@ -58,8 +58,6 @@ public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
     CreateNative("WhaleTracker_AreStatsLoaded", Native_WhaleTracker_AreStatsLoaded);
     CreateNative("WhaleTracker_GetWhalePoints", Native_WhaleTracker_GetWhalePoints);
     CreateNative("WhaleTracker_ApplyBonusPoints", Native_WhaleTracker_ApplyBonusPoints);
-    CreateNative("WhaleTracker_GiveBonusPoints", Native_WhaleTracker_GiveBonusPoints);
-    CreateNative("WhaleTracker_SpendBonusPoints", Native_WhaleTracker_SpendBonusPoints);
     CreateNative("WhaleTracker_GetLastRecordedName", Native_WhaleTracker_GetLastRecordedName);
     return APLRes_Success;
 }
@@ -235,6 +233,18 @@ Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
 Handle g_hPointsCacheRefreshTimer = null;
 Handle g_hAirshotForward = null;
+
+bool g_bClientPointsCacheLoaded[MAXPLAYERS + 1];
+bool g_bClientPointsCachePending[MAXPLAYERS + 1];
+int g_iClientCachedPoints[MAXPLAYERS + 1];
+int g_iClientCachedRank[MAXPLAYERS + 1];
+char g_sClientCachedName[MAXPLAYERS + 1][128];
+char g_sClientCachedColor[MAXPLAYERS + 1][32];
+char g_sClientCachedPrename[MAXPLAYERS + 1][64];
+
+bool g_bFavoriteClassLoaded[MAXPLAYERS + 1];
+bool g_bFavoriteClassPending[MAXPLAYERS + 1];
+int g_iFavoriteClassCache[MAXPLAYERS + 1];
 
 char g_SaveQueryBuffers[MAX_CONCURRENT_SAVE_QUERIES][SAVE_QUERY_MAXLEN];
 int g_SaveQueryUserIds[MAX_CONCURRENT_SAVE_QUERIES];
