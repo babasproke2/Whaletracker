@@ -81,7 +81,8 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
                     g_Stats[attacker].bonusPoints += pointsDiff;
                     char colorTag[32];
                     GetClientFiltersNameColorTag(victim, colorTag, sizeof(colorTag));
-                    CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
+                    //CPrintToChat(attacker, "+%i {magenta}Bonus Points{default} for killing {%s}%N{default}", pointsDiff, colorTag, victim);
+                    //CPrintToChat(attacker, "{magenta}[Bonus Points] {lightgreen}+%i", pointsDiff);
                 }
             }
             if (victimClass == TF_CLASS_MEDIC)
