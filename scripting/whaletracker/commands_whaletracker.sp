@@ -1004,6 +1004,22 @@ public any Native_WhaleTracker_GetWhalePoints(Handle plugin, int numParams)
     return GetWhalePointsForClient(client);
 }
 
+public any Native_WhaleTracker_ApplyBonusPoints(Handle plugin, int numParams)
+{
+    int client = GetNativeCell(1);
+    int points = GetNativeCell(2);
+    bool playSound = view_as<bool>(GetNativeCell(3));
+    bool chatAlert = view_as<bool>(GetNativeCell(4));
+    float randomChance = view_as<float>(GetNativeCell(5));
+
+    char type[64];
+    GetNativeString(6, type, sizeof(type));
+    TrimString(type);
+
+    int target = (numParams >= 7) ? GetNativeCell(7) : 0;
+    return ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target);
+}
+
 public any Native_WhaleTracker_GiveBonusPoints(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);

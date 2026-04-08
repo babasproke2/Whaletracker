@@ -30,6 +30,28 @@ native bool WhaleTracker_AreStatsLoaded(int client);
 native int WhaleTracker_GetWhalePoints(int client);
 
 /**
+ * Applies bonus points with full WhaleTracker behavior.
+ *
+ * @param client        Client index.
+ * @param points        Points delta. Negative spends.
+ * @param playSound     Play gain_xp through SaySounds.
+ * @param chatAlert     Print BP chat line.
+ * @param randomChance  Chance, clamped to 0.1..1.0.
+ * @param type          Message type key.
+ * @param target        Optional target client.
+ * @return              True on success.
+ */
+native bool WhaleTracker_ApplyBonusPoints(int client, int points, bool playSound, bool chatAlert, float randomChance, const char[] type, int target = 0);
+
+/**
+ * API convenience wrapper.
+ */
+stock bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
+{
+    return WhaleTracker_ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target);
+}
+
+/**
  * Adds bonus points to a client and returns the new total.
  *
  * @param client        Client index.

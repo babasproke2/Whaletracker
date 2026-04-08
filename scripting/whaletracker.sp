@@ -40,7 +40,7 @@
 #define TF_CLASS_MEDIC          5
 
 native int Filters_GetChatName(int client, char[] buffer, int maxlen);
-native int SaySounds_PlayCommand(int client, const char[] commandName);
+native int SaySounds_PlayCommand(int client, const char[] commandName, bool ignoreOptIn = false);
 forward bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync);
 forward void WhaleTracker_RustInit();
 forward void WhaleTracker_RustFlushSqlBatch();
@@ -57,6 +57,7 @@ public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
     CreateNative("WhaleTracker_GetCumulativeKills", Native_WhaleTracker_GetCumulativeKills);
     CreateNative("WhaleTracker_AreStatsLoaded", Native_WhaleTracker_AreStatsLoaded);
     CreateNative("WhaleTracker_GetWhalePoints", Native_WhaleTracker_GetWhalePoints);
+    CreateNative("WhaleTracker_ApplyBonusPoints", Native_WhaleTracker_ApplyBonusPoints);
     CreateNative("WhaleTracker_GiveBonusPoints", Native_WhaleTracker_GiveBonusPoints);
     CreateNative("WhaleTracker_SpendBonusPoints", Native_WhaleTracker_SpendBonusPoints);
     CreateNative("WhaleTracker_GetLastRecordedName", Native_WhaleTracker_GetLastRecordedName);

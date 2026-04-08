@@ -1490,7 +1490,7 @@ void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
 
 bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
 {
-    if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client) || points < 1)
+    if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client) || points == 0)
         return false;
 
     if (!WhaleTracker_AreClientStatsReady(client))
@@ -1516,7 +1516,7 @@ bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool ch
     if (playSound)
     {
         if (LibraryExists("saysounds"))
-            SaySounds_PlayCommand(client, WT_BONUS_POINTS_SOUND);
+            SaySounds_PlayCommand(client, WT_BONUS_POINTS_SOUND, true);
     }
 
     if (!chatAlert)
