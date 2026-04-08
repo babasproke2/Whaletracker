@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_FILE="${CONFIG_FILE:-/home/gameserver/hlserver/tf2/tf/addons/sourcemod/configs/databases.cfg}"
+CONFIG_FILE="${CONFIG_FILE:-/home/kogasa/hlserver/tf2/tf/addons/sourcemod/configs/databases.cfg}"
 DB_SECTION="${DB_SECTION:-default}"
 LIMIT="${1:-100}"
 
@@ -61,42 +61,26 @@ if [ -z "$PORT" ]; then
 fi
 
 read -r -d '' SQL <<SQL || true
-WITH ranked AS (
+WITH scored AS (
     SELECT
-        ROW_NUMBER() OVER (
-            ORDER BY
-                CEIL((((GREATEST(w.damage_dealt,0) / 300.0)
-                    + (GREATEST(w.healing,0) / 400.0)
-                    + FLOOR((GREATEST(w.kills,0) * 1.5) + (GREATEST(w.assists,0) * 0.5))
-                    + GREATEST(w.backstabs,0)
-                    + GREATEST(w.headshots,0)
-                    + (GREATEST(w.airshots,0) * 3)
-                    + GREATEST(w.medicKills,0)
-                    + GREATEST(w.heavyKills,0)
-                    + (GREATEST(w.marketGardenHits,0) * 5)
-                    + (GREATEST(w.total_ubers,0) * 10)) * 10000.0)
-                    / GREATEST(GREATEST(w.deaths,0) + (GREATEST(w.damage_taken,0) / 500.0), 1)
-                ) DESC,
-                w.steamid ASC
-        ) AS rank,
-        CEIL((((GREATEST(w.damage_dealt,0) / 300.0)
-            + (GREATEST(w.healing,0) / 400.0)
-            + FLOOR((GREATEST(w.kills,0) * 1.5) + (GREATEST(w.assists,0) * 0.5))
-            + GREATEST(w.backstabs,0)
-            + GREATEST(w.headshots,0)
-            + (GREATEST(w.airshots,0) * 3)
-            + GREATEST(w.medicKills,0)
-            + GREATEST(w.heavyKills,0)
-            + (GREATEST(w.marketGardenHits,0) * 5)
-            + (GREATEST(w.total_ubers,0) * 10)) * 10000.0)
-            / GREATEST(GREATEST(w.deaths,0) + (GREATEST(w.damage_taken,0) / 500.0), 1)
-        ) AS points,
+        w.steamid,
+        ROUND(1000.0 * SQRT(((CASE WHEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) > 0 THEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) ELSE 1 END)) / (((CASE WHEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) > 0 THEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) ELSE 1 END)) + 400.0)) * (((CASE WHEN w.playtime > 0 THEN w.playtime ELSE 0 END) / 3600.0) / (((CASE WHEN w.playtime > 0 THEN w.playtime ELSE 0 END) / 3600.0) + 20.0)) * ((5.0 * (((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + ((CASE WHEN w.assists > 0 THEN w.assists ELSE 0 END) * 0.35)) / ((CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END) + 20.0))) + LN(1.0 + ((CASE WHEN w.damage_dealt > 0 THEN w.damage_dealt ELSE 0 END) / (150.0 * ((CASE WHEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) > 0 THEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) ELSE 1 END))))) + (0.60 * LN(1.0 + ((CASE WHEN w.healing > 0 THEN w.healing ELSE 0 END) / (100.0 * ((CASE WHEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) > 0 THEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) ELSE 1 END)))))) + (0.90 * LN(1.0 + ((60.0 * (CASE WHEN w.total_ubers > 0 THEN w.total_ubers ELSE 0 END)) / ((CASE WHEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) > 0 THEN ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) ELSE 1 END))))))) AS points,
         COALESCE(NULLIF(w.cached_personaname,''), NULLIF(w.personaname,''), w.steamid) AS name,
         COALESCE((SELECT p.newname FROM prename_rules p WHERE p.pattern = w.steamid LIMIT 1), '') AS prename,
         COALESCE(NULLIF(f.color,''), 'gold') AS color
     FROM whaletracker w
     LEFT JOIN filters_namecolors f ON f.steamid = w.steamid
-    WHERE (GREATEST(w.kills,0) + GREATEST(w.deaths,0)) > 1000
+    WHERE ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) >= 200
+      AND (CASE WHEN w.playtime > 0 THEN w.playtime ELSE 0 END) >= 10800
+),
+ranked AS (
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY points DESC, steamid ASC) AS rank,
+        points,
+        name,
+        prename,
+        color
+    FROM scored
 )
 SELECT rank, points, name, prename, color
 FROM ranked
