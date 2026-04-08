@@ -73,16 +73,14 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
             int pointsDiff = checkPointsDiff(victim, attacker);
-            ApplyBonusPoints(attacker, pointsDiff, true, false, 1.0, "points_diff", victim);
+            ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "points_diff", victim);
             if (victimClass == TF_CLASS_MEDIC)
             {
                 g_Stats[attacker].totalMedicKills++;
-                ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "medic_kill", victim);
             }
             if (victimClass == TF_CLASS_HEAVY)
             {
                 g_Stats[attacker].totalHeavyKills++;
-                ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "heavy_kill", victim);
             }
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);

@@ -40,7 +40,7 @@
 #define TF_CLASS_MEDIC          5
 
 native int Filters_GetChatName(int client, char[] buffer, int maxlen);
-native int SaySounds_PlayCommand(int client, const char[] commandName, bool ignoreOptIn = false);
+native bool SaySounds_PlayCommand(int client, const char[] commandName, bool ignoreOptIn = false);
 forward bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync);
 forward void WhaleTracker_RustInit();
 forward void WhaleTracker_RustFlushSqlBatch();
