@@ -575,16 +575,7 @@ void SetFavoriteClassForClient(int client, int favoriteClass)
         firstSeen,
         favoriteClass);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
-        LogError("[WhaleTracker] Failed to set favorite class for %N: %s", client, error);
-        CPrintToChat(client, "{green}[WhaleTracker]{default} Failed to save your favorite class.");
-        return;
-    }
-    delete results;
+    QueueSaveQuery(query, GetClientUserId(client), false);
 
     char className[16];
     GetFavoriteClassDisplayName(favoriteClass, className, sizeof(className));
@@ -704,7 +695,7 @@ bool GetCachedWhalePointsForClient(int client, int &points, int &rank, char[] pl
     return GetCachedWhalePointsForSteamId(g_Stats[client].steamId, points, rank, playerName, playerNameLen, colorTag, colorTagLen, prename, prenameLen);
 }
 
-void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerName, const char[] knownColor = "")
+void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerName, const char[] knownColor = "", int userId = 0)
 {
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
@@ -761,15 +752,7 @@ void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerNam
         GetTime(),
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
-    if (results == null)
-    {
-        char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
-        LogError("[WhaleTracker] Failed to update points cache: %s | Query: %s", error, query);
-        return;
-    }
-    delete results;
+    QueueSaveQuery(query, userId, false);
 }
 
 void RefreshWhalePointsCacheAll()
@@ -856,7 +839,7 @@ void CacheWhalePointsOnDisconnect(int client)
     char colorTag[32];
     GetNameColorTagForSteamId(g_Stats[client].steamId, colorTag, sizeof(colorTag));
 
-    UpdateWhalePointsCacheMetadata(g_Stats[client].steamId, clientName, colorTag);
+    UpdateWhalePointsCacheMetadata(g_Stats[client].steamId, clientName, colorTag, GetClientUserId(client));
 }
 
 bool IsValidClient(int client)
