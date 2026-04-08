@@ -39,16 +39,17 @@ native int WhaleTracker_GetWhalePoints(int client);
  * @param randomChance  Chance, clamped to 0.1..1.0.
  * @param type          Message type key.
  * @param target        Optional target client.
+ * @param delay         Delay in seconds. 0.0 = immediate.
  * @return              True on success.
  */
-native bool WhaleTracker_ApplyBonusPoints(int client, int points, bool playSound, bool chatAlert, float randomChance, const char[] type, int target = 0);
+native bool WhaleTracker_ApplyBonusPoints(int client, int points, bool playSound, bool chatAlert, float randomChance, const char[] type, int target = 0, float delay = 3.0);
 
 /**
  * API convenience wrapper.
  */
-stock bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
+stock bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0, float delay = 3.0)
 {
-    return WhaleTracker_ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target);
+    return WhaleTracker_ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target, delay);
 }
 
 /**

@@ -1116,14 +1116,15 @@ public any Native_WhaleTracker_ApplyBonusPoints(Handle plugin, int numParams)
     TrimString(type);
 
     int target = (numParams >= 7) ? GetNativeCell(7) : 0;
-    return ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target);
+    float delay = (numParams >= 8) ? view_as<float>(GetNativeCell(8)) : 3.0;
+    return ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target, delay);
 }
 
 public any Native_WhaleTracker_GiveBonusPoints(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
     int amount = GetNativeCell(2);
-    if (!ApplyBonusPoints(client, amount, false, false, 1.0))
+    if (!ApplyBonusPoints(client, amount, false, false, 1.0, "", 0, 0.0))
         return 0;
 
     return g_Stats[client].bonusPoints;
@@ -1136,7 +1137,7 @@ public any Native_WhaleTracker_SpendBonusPoints(Handle plugin, int numParams)
     if (amount <= 0)
         return false;
 
-    return ApplyBonusPoints(client, -amount, false, false, 1.0);
+    return ApplyBonusPoints(client, -amount, false, false, 1.0, "", 0, 0.0);
 }
 
 public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)

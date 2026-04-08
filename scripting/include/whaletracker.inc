@@ -1488,7 +1488,7 @@ void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
     }
 }
 
-bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
+bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
 {
     if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client) || points == 0)
         return false;
@@ -1545,6 +1545,48 @@ bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool ch
 
     CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i", sign, absPoints);
     return true;
+}
+
+bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0, float delay = 3.0)
+{
+    if (delay < 0.0)
+        delay = 0.0;
+
+    if (delay == 0.0)
+        return ApplyBonusPointsNow(client, points, playSound, chatAlert, randomChance, type, target);
+
+    if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client) || points == 0)
+        return false;
+
+    DataPack pack = new DataPack();
+    pack.WriteCell(GetClientUserId(client));
+    pack.WriteCell(points);
+    pack.WriteCell(playSound ? 1 : 0);
+    pack.WriteCell(chatAlert ? 1 : 0);
+    pack.WriteFloat(randomChance);
+    pack.WriteString(type);
+    pack.WriteCell(IsValidClient(target) ? GetClientUserId(target) : 0);
+
+    CreateTimer(delay, Timer_DeferredApplyBonusPoints, pack, TIMER_FLAG_NO_MAPCHANGE | TIMER_DATA_HNDL_CLOSE);
+    return true;
+}
+
+public Action Timer_DeferredApplyBonusPoints(Handle timer, any data)
+{
+    DataPack pack = view_as<DataPack>(data);
+    pack.Reset();
+
+    int client = GetClientOfUserId(pack.ReadCell());
+    int points = pack.ReadCell();
+    bool playSound = pack.ReadCell() != 0;
+    bool chatAlert = pack.ReadCell() != 0;
+    float randomChance = pack.ReadFloat();
+    char type[64];
+    pack.ReadString(type, sizeof(type));
+    int target = GetClientOfUserId(pack.ReadCell());
+
+    ApplyBonusPointsNow(client, points, playSound, chatAlert, randomChance, type, target);
+    return Plugin_Stop;
 }
 
 void BuildWeaponAccuracySegment(const WhaleStats stats, char[] buffer, int maxlen)
