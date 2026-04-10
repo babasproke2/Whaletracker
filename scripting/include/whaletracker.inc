@@ -105,6 +105,11 @@ bool WhaleTracker_AreClientStatsReady(int client)
         && !g_bOnlineStateLoadPending[client]);
 }
 
+bool WhaleTracker_IsRoundRunning()
+{
+    return (GameRules_GetProp("m_nRoundState") == 4);
+}
+
 void WhaleTracker_RefreshClientTrackingState(int client)
 {
     if (client <= 0 || client > MaxClients)
@@ -1409,6 +1414,7 @@ bool WhaleTracker_IsTrackingEnabled(int client)
         && client <= MaxClients
         && !IsFakeClient(client)
         && GetClientTeam(client) > 1
+        && WhaleTracker_IsRoundRunning()
         && WhaleTracker_AreClientStatsReady(client)
         && g_bTrackEligible[client]);
 }
