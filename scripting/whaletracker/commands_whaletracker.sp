@@ -1186,6 +1186,12 @@ public any Native_WhaleTracker_GetWhalePoints(Handle plugin, int numParams)
     return GetWhalePointsForClient(client);
 }
 
+public any Native_WhaleTracker_IsCurrentRoundMvp(Handle plugin, int numParams)
+{
+    int client = GetNativeCell(1);
+    return IsClientCurrentRoundMvp(client);
+}
+
 public any Native_WhaleTracker_ApplyBonusPoints(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);

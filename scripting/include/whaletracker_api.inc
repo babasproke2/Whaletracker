@@ -30,6 +30,14 @@ native bool WhaleTracker_AreStatsLoaded(int client);
 native int WhaleTracker_GetWhalePoints(int client);
 
 /**
+ * Returns whether a client is the stored MVP for their current team this round.
+ *
+ * @param client        Client index.
+ * @return              True if current round MVP.
+ */
+native bool WhaleTracker_IsCurrentRoundMvp(int client);
+
+/**
  * Applies bonus points with full WhaleTracker behavior.
  *
  * @param client        Client index.
