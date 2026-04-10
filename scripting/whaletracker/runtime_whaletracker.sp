@@ -560,26 +560,37 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     }
 
     char displayName[128];
-    bool useCachedDecorated = (colorTag[0] != '\0' && (cachedPrename[0] != '\0' || cachedName[0] != '\0'));
-    if (useCachedDecorated)
-    {
-        if (cachedPrename[0] != '\0')
-        {
-            strcopy(displayName, sizeof(displayName), cachedPrename);
-        }
-        else
-        {
-            strcopy(displayName, sizeof(displayName), cachedName);
-        }
-    }
-    else if (GetFeatureStatus(FeatureType_Native, "Filters_GetChatName") == FeatureStatus_Available
+    bool useCachedDecorated = false;
+    if (GetFeatureStatus(FeatureType_Native, "Filters_GetChatName") == FeatureStatus_Available
         && Filters_GetChatName(client, displayName, sizeof(displayName)) && displayName[0] != '\0')
     {
         TrimString(displayName);
+
+        if (StrContains(displayName, "{teamcolor}", false) == 0)
+        {
+            ReplaceString(displayName, sizeof(displayName), "{teamcolor}", "{gold}", false);
+        }
     }
     else
     {
-        GetClientName(client, displayName, sizeof(displayName));
+        useCachedDecorated = (colorTag[0] != '\0' && (cachedPrename[0] != '\0' || cachedName[0] != '\0'));
+        if (useCachedDecorated)
+        {
+            if (cachedPrename[0] != '\0')
+            {
+                strcopy(displayName, sizeof(displayName), cachedPrename);
+            }
+            else
+            {
+                strcopy(displayName, sizeof(displayName), cachedName);
+            }
+        }
+        else
+        {
+            char rawName[MAX_NAME_LENGTH];
+            GetClientName(client, rawName, sizeof(rawName));
+            FormatEx(displayName, sizeof(displayName), "{gold}%s", rawName);
+        }
     }
 
     if (rank > 0)

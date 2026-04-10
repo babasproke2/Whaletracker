@@ -74,7 +74,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`hits_snipers` INTEGER DEFAULT 0,"
         ... "`shots_revolvers` INTEGER DEFAULT 0,"
         ... "`hits_revolvers` INTEGER DEFAULT 0"
-        ... ")");
+        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     g_hDatabase.Query(WhaleTracker_CreateTable, query);
 
     Format(query, sizeof(query), "CREATE INDEX IF NOT EXISTS `idx_last_seen` ON `whaletracker` (`last_seen`)");
@@ -130,7 +130,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`playercount` INTEGER DEFAULT 0,"
         ... "`map_name` VARCHAR(128) DEFAULT '',"
         ... "`last_update` INTEGER DEFAULT 0"
-        ... ")");
+        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     g_hDatabase.Query(WhaleTracker_CreateOnlineTable, query);
 
         Format(query, sizeof(query),
@@ -147,7 +147,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
             ... "`flags` VARCHAR(256) DEFAULT '',"
             ... "`last_update` INTEGER DEFAULT 0,"
             ... "PRIMARY KEY (`ip`, `port`)"
-            ... ")");
+            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     g_hDatabase.Query(WhaleTracker_CreateServersTable, query);
 
     if (WhaleTracker_ShouldUseMatchLogs())
@@ -163,7 +163,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
             ... "`player_count` INTEGER DEFAULT 0,"
             ... "`created_at` INTEGER DEFAULT 0,"
             ... "`updated_at` INTEGER DEFAULT 0"
-            ... ")");
+            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         g_hDatabase.Query(WhaleTracker_CreateLogsTable, query);
 
         Format(query, sizeof(query),
@@ -203,7 +203,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
             ... "`best_streak` INTEGER DEFAULT 0,"
             ... "`last_updated` INTEGER DEFAULT 0,"
             ... "PRIMARY KEY (`log_id`, `steamid`)"
-            ... ")");
+            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         g_hDatabase.Query(WhaleTracker_CreateLogPlayersTable, query);
     }
 
@@ -216,7 +216,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... "`name_color` VARCHAR(32) DEFAULT '',"
         ... "`prename` VARCHAR(64) DEFAULT '',"
         ... "`updated_at` INTEGER DEFAULT 0"
-        ... ")");
+        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     g_hDatabase.Query(WhaleTracker_CreatePointsCacheTable, query);
 
     SQL_FastQuery(g_hDatabase, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
@@ -266,6 +266,19 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
     for (int i = 0; i < sizeof(alterQueries); i++)
     {
         g_hDatabase.Query(WhaleTracker_AlterCallback, alterQueries[i]);
+    }
+
+    static const char charsetQueries[][96] =
+    {
+        "ALTER TABLE whaletracker CONVERT TO CHARACTER SET utf8mb4",
+        "ALTER TABLE whaletracker_online CONVERT TO CHARACTER SET utf8mb4",
+        "ALTER TABLE whaletracker_servers CONVERT TO CHARACTER SET utf8mb4",
+        "ALTER TABLE whaletracker_points_cache CONVERT TO CHARACTER SET utf8mb4"
+    };
+
+    for (int i = 0; i < sizeof(charsetQueries); i++)
+    {
+        g_hDatabase.Query(WhaleTracker_AlterCallback, charsetQueries[i]);
     }
 
     static const char alterOnlineQueries[][160] =
@@ -355,6 +368,17 @@ public void WhaleTracker_CreateTable(Database db, DBResultSet results, const cha
         for (int i = 0; i < sizeof(alterLogsQueries); i++)
         {
             g_hDatabase.Query(WhaleTracker_AlterCallback, alterLogsQueries[i]);
+        }
+
+        static const char charsetLogsQueries[][96] =
+        {
+            "ALTER TABLE whaletracker_logs CONVERT TO CHARACTER SET utf8mb4",
+            "ALTER TABLE whaletracker_log_players CONVERT TO CHARACTER SET utf8mb4"
+        };
+
+        for (int i = 0; i < sizeof(charsetLogsQueries); i++)
+        {
+            g_hDatabase.Query(WhaleTracker_AlterCallback, charsetLogsQueries[i]);
         }
     }
 
