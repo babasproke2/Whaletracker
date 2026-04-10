@@ -243,15 +243,37 @@ public Action Command_ShowBonusPoints(int client, int args)
         return Plugin_Handled;
     }
 
+    int target = client;
+    if (args >= 1)
+    {
+        char targetArg[64];
+        GetCmdArgString(targetArg, sizeof(targetArg));
+        TrimString(targetArg);
+        if (targetArg[0])
+        {
+            int candidate = FindTarget(client, targetArg, true, false);
+            if (candidate > 0 && IsValidClient(candidate) && !IsFakeClient(candidate))
+            {
+                target = candidate;
+            }
+            else
+            {
+                CPrintToChat(client, "{green}[WhaleTracker]{default} Could not find player '%s'.", targetArg);
+                return Plugin_Handled;
+            }
+        }
+    }
+
     char msg[512];
 
     FormatEx(msg, sizeof(msg),
-        "{magenta}[BP]: {lightgreen}%i{default}\n"
-        ... "Killing a player with points 50%% higher than yours: {lightgreen}+3\n"
+        "{green}[WhaleTracker]{default} %N's Bonus Points: {lightgreen}%i{default}\n"
+        ... "Killing an MVP: {lightgreen}+2\n"
         ... "+3{default} from Medic drops\n"
-        ... "{lightgreen}+1{default} from Medic kills, Heavy kills, airshot kills\n"
+        ... "{lightgreen}+1{default} from Medic/Heavy kills, airshot kills, ubers, market gardens\n"
         ... "Bonus points are dispensed on a 3 second delay; listen for {gold}!xp_gain\n",
-        g_Stats[client].bonusPoints);
+        target,
+        g_Stats[target].bonusPoints);
 
     CPrintToChat(client, "%s", msg);
     return Plugin_Handled;

@@ -1,6 +1,103 @@
 bool g_bPlayerTakenDirectHit[MAXPLAYERS + 1];
 bool g_bInExplosiveJump[MAXPLAYERS + 1];
 
+void ClearRoundMvpFlags()
+{
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        g_bRoundMvp[i] = false;
+    }
+}
+
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+    ClearRoundMvpFlags();
+
+    if (g_hRoundMvpTimer != null)
+    {
+        CloseHandle(g_hRoundMvpTimer);
+    }
+
+    g_hRoundMvpTimer = CreateTimer(1.0, Timer_SetRoundMvps, 0, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action Timer_SetRoundMvps(Handle timer, any data)
+{
+    g_hRoundMvpTimer = null;
+
+    int attempt = data;
+    int redMvp = 0;
+    int blueMvp = 0;
+    int bestRedRank = 0;
+    int bestBlueRank = 0;
+    bool missingCache = false;
+
+    ClearRoundMvpFlags();
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientInGame(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        int team = GetClientTeam(i);
+        if (team != 2 && team != 3)
+        {
+            continue;
+        }
+
+        if (!g_bClientPointsCacheLoaded[i])
+        {
+            RequestClientPointsCacheQuery(i);
+            missingCache = true;
+            continue;
+        }
+
+        int rank = g_iClientCachedRank[i];
+        if (rank < 1)
+        {
+            continue;
+        }
+
+        if (team == 2 && (redMvp == 0 || rank < bestRedRank))
+        {
+            redMvp = i;
+            bestRedRank = rank;
+            continue;
+        }
+
+        if (team == 3 && (blueMvp == 0 || rank < bestBlueRank))
+        {
+            blueMvp = i;
+            bestBlueRank = rank;
+        }
+    }
+
+    if ((redMvp == 0 || blueMvp == 0) && missingCache && attempt < 5)
+    {
+        g_hRoundMvpTimer = CreateTimer(1.0, Timer_SetRoundMvps, attempt + 1, TIMER_FLAG_NO_MAPCHANGE);
+        return Plugin_Stop;
+    }
+
+    if (redMvp > 0)
+    {
+        g_bRoundMvp[redMvp] = true;
+    }
+
+    if (blueMvp > 0)
+    {
+        g_bRoundMvp[blueMvp] = true;
+    }
+
+    if (redMvp > 0 && blueMvp > 0)
+    {
+        CPrintToChatAll("{magenta}MVPs{default} this round: {red}%N{default}, {blue}%N", redMvp, blueMvp);
+    }
+
+    return Plugin_Stop;
+}
+
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 {
     int client = GetClientOfUserId(event.GetInt("userid"));
@@ -72,8 +169,10 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
-            int pointsDiff = checkPointsDiff(victim, attacker);
-            ApplyBonusPoints(attacker, pointsDiff, true, true, 1.0, "points_diff", victim);
+            if (IsValidClient(victim) && g_bRoundMvp[victim])
+            {
+                ApplyBonusPoints(attacker, 2, true, true, 1.0, "mvp_kill", victim);
+            }
             if (victimClass == TF_CLASS_MEDIC)
             {
                 g_Stats[attacker].totalMedicKills++;
@@ -178,6 +277,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
         {
             g_Stats[attacker].totalMarketGardenHits += 1;
             g_MapStats[attacker].totalMarketGardenHits += 1;
+            ApplyBonusPoints(attacker, 1, true, true, 1.0, "market_garden");
         }
 
         g_Stats[attacker].totalDamage += damageInt;
@@ -241,6 +341,7 @@ public void Event_UberDeployed(Event event, const char[] name, bool dontBroadcas
 
     ApplyUberStats(g_Stats[medic]);
     ApplyUberStats(g_MapStats[medic]);
+    ApplyBonusPoints(medic, 1, true, true, 1.0, "uber_deployed");
     MarkClientDirty(medic);
 }
 

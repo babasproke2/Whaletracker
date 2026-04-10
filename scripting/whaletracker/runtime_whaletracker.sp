@@ -73,6 +73,8 @@ public void OnPluginStart()
     HookEvent("sticky_jump", Event_ExplosiveJump, EventHookMode_Pre);
     HookEvent("rocket_jump_landed", Event_ExplosiveJumpLanded, EventHookMode_Pre);
     HookEvent("sticky_jump_landed", Event_ExplosiveJumpLanded, EventHookMode_Pre);
+    HookEvent("teamplay_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
+    HookEvent("arena_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
 
     RegConsoleCmd("sm_whalestats", Command_ShowStats, "Show your Whale Tracker statistics.");
     RegConsoleCmd("sm_stats", Command_ShowStats, "Show your Whale Tracker statistics.");
@@ -167,6 +169,7 @@ public void OnMapStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     ClearOnlineStats();
+    ClearRoundMvpFlags();
     for (int i = 1; i <= MaxClients; i++)
     {
         ResetMapStats(i);
@@ -300,6 +303,7 @@ public void OnPluginEnd()
     g_hPeriodicSaveTimer = null;
     g_hPointsCacheRefreshTimer = null;
     g_hPointsCacheRefreshRepeatTimer = null;
+    g_hRoundMvpTimer = null;
     g_hReconnectTimer = null;
     g_hSavePumpTimer = null;
 
@@ -343,6 +347,7 @@ public void OnClientPutInServer(int client)
 
     ResetRuntimeStats(client);
     ResetClientCommandCaches(client);
+    g_bRoundMvp[client] = false;
     g_Stats[client].connectTime = GetEngineTime();
     g_MapStats[client].connectTime = GetEngineTime();
     g_KillSaveCounter[client] = 0;
@@ -408,6 +413,7 @@ public void OnClientDisconnect(int client)
     RemoveOnlineStats(client);
     ResetAllStats(client);
     ResetClientCommandCaches(client);
+    g_bRoundMvp[client] = false;
     g_KillSaveCounter[client] = 0;
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
