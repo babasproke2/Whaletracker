@@ -279,6 +279,101 @@ public Action Command_ShowBonusPoints(int client, int args)
     return Plugin_Handled;
 }
 
+public Action Command_SendBonusPoints(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+
+    if (args < 2)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Usage: !sendbp <player> <amount>");
+        return Plugin_Handled;
+    }
+
+    char targetArg[64];
+    GetCmdArg(1, targetArg, sizeof(targetArg));
+    TrimString(targetArg);
+
+    int target = FindTarget(client, targetArg, true, false);
+    if (target <= 0 || !IsValidClient(target) || IsFakeClient(target))
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Could not find player '%s'.", targetArg);
+        return Plugin_Handled;
+    }
+
+    if (target == client)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} You cannot send Bonus Points to yourself.");
+        return Plugin_Handled;
+    }
+
+    char amountArg[32];
+    GetCmdArg(2, amountArg, sizeof(amountArg));
+    int amount = StringToInt(amountArg);
+    if (amount <= 0)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Amount must be greater than 0.");
+        return Plugin_Handled;
+    }
+
+    if (!WhaleTracker_AreClientStatsReady(client))
+    {
+        RequestClientStateLoads(client);
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Your stats are loading. Try again in a moment.");
+        return Plugin_Handled;
+    }
+
+    if (!WhaleTracker_AreClientStatsReady(target))
+    {
+        RequestClientStateLoads(target);
+        CPrintToChat(client, "{green}[WhaleTracker]{default} %N's stats are loading. Try again in a moment.", target);
+        return Plugin_Handled;
+    }
+
+    if (g_Stats[client].bonusPoints < amount)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} You only have {magenta}%i{default} BP.", g_Stats[client].bonusPoints);
+        return Plugin_Handled;
+    }
+
+    if (!ApplyBonusPoints(client, -amount, false, false, 1.0, "", 0, 0.0))
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Could not spend your Bonus Points.");
+        return Plugin_Handled;
+    }
+
+    if (!ApplyBonusPoints(target, amount, false, false, 1.0, "", 0, 0.0))
+    {
+        ApplyBonusPoints(client, amount, false, false, 1.0, "", 0, 0.0);
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Could not give Bonus Points to %N.", target);
+        return Plugin_Handled;
+    }
+
+    if (LibraryExists("saysounds"))
+    {
+        SaySounds_PlayCommand(0, WT_BONUS_POINTS_SOUND, true);
+    }
+
+    char senderColor[32];
+    char targetColor[32];
+    GetClientFiltersNameColorTag(client, senderColor, sizeof(senderColor));
+    GetClientFiltersNameColorTag(target, targetColor, sizeof(targetColor));
+
+    if (senderColor[0] == '\0')
+    {
+        strcopy(senderColor, sizeof(senderColor), "gold");
+    }
+    if (targetColor[0] == '\0')
+    {
+        strcopy(targetColor, sizeof(targetColor), "gold");
+    }
+
+    CPrintToChatAll("{lightgreen}[WhaleTracker]{default} {%s}%N{default} sent {%s}%N{default} %i {magenta}BP{default}!", senderColor, client, targetColor, target, amount);
+    return Plugin_Handled;
+}
+
 public Action Command_SetFavoriteClass(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
