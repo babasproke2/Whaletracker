@@ -25,7 +25,7 @@
 #define WHALE_POINTS_MIN_KD_SUM 1000
 #define WHALE_RANK_MIN_KD_SUM 200
 #define WHALE_RANK_MIN_PLAYTIME_SECONDS 10800
-#define WT_BONUS_POINTS_SOUND "gain_xp"
+#define WT_BONUS_POINTS_SOUND "xp_gain"
 #define WHALE_LEADERBOARD_PAGE_SIZE 10
 #define WT_MARKET_GARDENER_DEF_INDEX 416
 #define WT_HANDSHAKE_DEF_INDEX 609
@@ -232,7 +232,9 @@ Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
 Handle g_hPointsCacheRefreshTimer = null;
+Handle g_hPointsCacheRefreshRepeatTimer = null;
 Handle g_hAirshotForward = null;
+bool g_bPointsCacheRefreshInFlight = false;
 
 bool g_bClientPointsCacheLoaded[MAXPLAYERS + 1];
 bool g_bClientPointsCachePending[MAXPLAYERS + 1];

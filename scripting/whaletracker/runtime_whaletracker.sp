@@ -130,6 +130,11 @@ public void OnPluginStart()
         CloseHandle(g_hPointsCacheRefreshTimer);
     }
     g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
+    if (g_hPointsCacheRefreshRepeatTimer != null)
+    {
+        CloseHandle(g_hPointsCacheRefreshRepeatTimer);
+    }
+    g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 
     g_hAirshotForward = CreateGlobalForward("WhaleTracker_OnAirshot", ET_Ignore, Param_Cell, Param_Cell);
 
@@ -200,6 +205,17 @@ public Action Timer_RefreshWhalePointsCacheStartup(Handle timer, any data)
 
     RefreshWhalePointsCacheAll();
     return Plugin_Stop;
+}
+
+public Action Timer_RefreshWhalePointsCacheRolling(Handle timer, any data)
+{
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return Plugin_Continue;
+    }
+
+    RefreshWhalePointsCacheAll();
+    return Plugin_Continue;
 }
 
 public void OnPluginEnd()
@@ -283,6 +299,7 @@ public void OnPluginEnd()
     g_hOnlineTimer = null;
     g_hPeriodicSaveTimer = null;
     g_hPointsCacheRefreshTimer = null;
+    g_hPointsCacheRefreshRepeatTimer = null;
     g_hReconnectTimer = null;
     g_hSavePumpTimer = null;
 

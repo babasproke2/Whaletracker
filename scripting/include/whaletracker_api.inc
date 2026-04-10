@@ -34,7 +34,7 @@ native int WhaleTracker_GetWhalePoints(int client);
  *
  * @param client        Client index.
  * @param points        Points delta. Negative spends.
- * @param playSound     Play gain_xp through SaySounds.
+ * @param playSound     Play  through SaySounds.
  * @param chatAlert     Print BP chat line.
  * @param randomChance  Chance, clamped to 0.1..1.0.
  * @param type          Message type key.

@@ -243,7 +243,17 @@ public Action Command_ShowBonusPoints(int client, int args)
         return Plugin_Handled;
     }
 
-    CPrintToChat(client, "{green}[WhaleTracker]{default} Bonus points: {magenta}%d{default}\nGet bonus points by killing players with a score above 15%% higher than yours;\nYou can also get bonus points from {magenta}!missions", g_Stats[client].bonusPoints);
+    char msg[512];
+
+    FormatEx(msg, sizeof(msg),
+        "{magenta}[BP]: {lightgreen}%i{default}\n"
+        ... "Killing a player with points 50%% higher than yours: {lightgreen}+3\n"
+        ... "+3{default} from Medic drops\n"
+        ... "{lightgreen}+1{default} from Medic kills, Heavy kills, airshot kills\n"
+        ... "Bonus points are dispensed on a 3 second delay; listen for {gold}!xp_gain\n",
+        g_Stats[client].bonusPoints);
+
+    CPrintToChat(client, "%s", msg);
     return Plugin_Handled;
 }
 
@@ -812,10 +822,12 @@ void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerNam
 
 void RefreshWhalePointsCacheAll()
 {
-    if (!g_bDatabaseReady || g_hDatabase == null)
+    if (!g_bDatabaseReady || g_hDatabase == null || g_bPointsCacheRefreshInFlight)
     {
         return;
     }
+
+    g_bPointsCacheRefreshInFlight = true;
 
     char query[256];
     Format(query, sizeof(query),
@@ -827,6 +839,7 @@ public void WhaleTracker_RefreshPointsCacheClearCallback(Database db, DBResultSe
 {
     if (error[0] != '\0')
     {
+        g_bPointsCacheRefreshInFlight = false;
         LogError("[WhaleTracker] Failed to clear points cache: %s", error);
         return;
     }
@@ -868,9 +881,12 @@ public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResul
 {
     if (error[0] != '\0')
     {
+        g_bPointsCacheRefreshInFlight = false;
         LogError("[WhaleTracker] Failed to rebuild points cache: %s", error);
         return;
     }
+
+    g_bPointsCacheRefreshInFlight = false;
 
     for (int i = 1; i <= MaxClients; i++)
     {
