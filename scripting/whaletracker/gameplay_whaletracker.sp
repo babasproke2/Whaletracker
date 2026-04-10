@@ -9,9 +9,107 @@ void ClearRoundMvpFlags()
     }
 }
 
-public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+void ClearRoundMvpIdentity()
+{
+    g_sRoundMvpSteamId[2][0] = '\0';
+    g_sRoundMvpSteamId[3][0] = '\0';
+}
+
+void ClearCurrentRoundMvpState()
 {
     ClearRoundMvpFlags();
+    ClearRoundMvpIdentity();
+}
+
+void ResetMapMvpHistory()
+{
+    if (g_hMapMvpSteamIds != null)
+    {
+        delete g_hMapMvpSteamIds;
+    }
+
+    g_hMapMvpSteamIds = new StringMap();
+}
+
+bool HasSteamIdBeenMapMvp(const char[] steamId)
+{
+    if (steamId[0] == '\0' || g_hMapMvpSteamIds == null)
+    {
+        return false;
+    }
+
+    int value = 0;
+    return g_hMapMvpSteamIds.GetValue(steamId, value);
+}
+
+void MarkSteamIdAsMapMvp(const char[] steamId)
+{
+    if (steamId[0] == '\0')
+    {
+        return;
+    }
+
+    if (g_hMapMvpSteamIds == null)
+    {
+        g_hMapMvpSteamIds = new StringMap();
+    }
+
+    g_hMapMvpSteamIds.SetValue(steamId, 1, true);
+}
+
+bool IsClientCurrentRoundMvp(int client)
+{
+    if (!IsValidClient(client) || IsFakeClient(client))
+    {
+        return false;
+    }
+
+    int team = GetClientTeam(client);
+    if (team != 2 && team != 3)
+    {
+        return false;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0' || g_sRoundMvpSteamId[team][0] == '\0')
+    {
+        return false;
+    }
+
+    return StrEqual(g_Stats[client].steamId, g_sRoundMvpSteamId[team], false);
+}
+
+void RefreshClientRoundMvpFlag(int client)
+{
+    if (client <= 0 || client > MaxClients)
+    {
+        return;
+    }
+
+    g_bRoundMvp[client] = IsClientCurrentRoundMvp(client);
+}
+
+void AssignRoundMvp(int client, int team)
+{
+    if (team != 2 && team != 3)
+    {
+        return;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return;
+    }
+
+    strcopy(g_sRoundMvpSteamId[team], sizeof(g_sRoundMvpSteamId[]), g_Stats[client].steamId);
+    MarkSteamIdAsMapMvp(g_Stats[client].steamId);
+    RefreshClientRoundMvpFlag(client);
+}
+
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+    ClearCurrentRoundMvpState();
 
     if (g_hRoundMvpTimer != null)
     {
@@ -32,7 +130,7 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
     int bestBlueRank = 0;
     bool missingCache = false;
 
-    ClearRoundMvpFlags();
+    ClearCurrentRoundMvpState();
 
     for (int i = 1; i <= MaxClients; i++)
     {
@@ -60,6 +158,18 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
             continue;
         }
 
+        EnsureClientSteamId(i);
+        if (g_Stats[i].steamId[0] == '\0')
+        {
+            missingCache = true;
+            continue;
+        }
+
+        if (HasSteamIdBeenMapMvp(g_Stats[i].steamId))
+        {
+            continue;
+        }
+
         if (team == 2 && (redMvp == 0 || rank < bestRedRank))
         {
             redMvp = i;
@@ -82,12 +192,12 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
 
     if (redMvp > 0)
     {
-        g_bRoundMvp[redMvp] = true;
+        AssignRoundMvp(redMvp, 2);
     }
 
     if (blueMvp > 0)
     {
-        g_bRoundMvp[blueMvp] = true;
+        AssignRoundMvp(blueMvp, 3);
     }
 
     if (redMvp > 0 && blueMvp > 0)
@@ -96,6 +206,17 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
     }
 
     return Plugin_Stop;
+}
+
+public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (!IsValidClient(client) || IsFakeClient(client))
+    {
+        return;
+    }
+
+    RefreshClientRoundMvpFlag(client);
 }
 
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
@@ -169,7 +290,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 
             ApplyKillStats(g_Stats[attacker], backstab, medicDrop);
             ApplyKillStats(g_MapStats[attacker], backstab, medicDrop);
-            if (IsValidClient(victim) && g_bRoundMvp[victim])
+            if (IsClientCurrentRoundMvp(victim))
             {
                 ApplyBonusPoints(attacker, 2, true, true, 1.0, "mvp_kill", victim);
             }

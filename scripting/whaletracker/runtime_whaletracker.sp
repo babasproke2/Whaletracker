@@ -75,6 +75,7 @@ public void OnPluginStart()
     HookEvent("sticky_jump_landed", Event_ExplosiveJumpLanded, EventHookMode_Pre);
     HookEvent("teamplay_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
     HookEvent("arena_round_start", Event_RoundStart, EventHookMode_PostNoCopy);
+    HookEvent("player_team", Event_PlayerTeam, EventHookMode_Post);
 
     RegConsoleCmd("sm_whalestats", Command_ShowStats, "Show your Whale Tracker statistics.");
     RegConsoleCmd("sm_stats", Command_ShowStats, "Show your Whale Tracker statistics.");
@@ -115,6 +116,7 @@ public void OnPluginStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     RefreshServerFlags();
+    ResetMapMvpHistory();
     WhaleTracker_RustInit();
 
     WhaleTracker_SQLConnect();
@@ -171,7 +173,8 @@ public void OnMapStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     ClearOnlineStats();
-    ClearRoundMvpFlags();
+    ClearCurrentRoundMvpState();
+    ResetMapMvpHistory();
     for (int i = 1; i <= MaxClients; i++)
     {
         ResetMapStats(i);
@@ -321,6 +324,12 @@ public void OnPluginEnd()
         g_SaveQueue = null;
     }
 
+    if (g_hMapMvpSteamIds != null)
+    {
+        delete g_hMapMvpSteamIds;
+        g_hMapMvpSteamIds = null;
+    }
+
     g_hDatabase = null;
     g_bDatabaseReady = false;
     g_hVisibleMaxPlayers = null;
@@ -384,6 +393,7 @@ public void OnClientPutInServer(int client)
 
     RequestClientStateLoads(client);
     WhaleTracker_RefreshClientTrackingState(client);
+    RefreshClientRoundMvpFlag(client);
     g_iDamageGate[client] = 0;
 }
 
@@ -440,6 +450,7 @@ public void OnClientAuthorized(int client, const char[] auth)
     // Fallback only; EnsureClientSteamId() will overwrite with SteamID64 when available.
     strcopy(g_Stats[client].steamId, sizeof(g_Stats[client].steamId), auth);
     strcopy(g_MapStats[client].steamId, sizeof(g_MapStats[client].steamId), auth);
+    RefreshClientRoundMvpFlag(client);
 }
 
 public void OnClientPostAdminCheck(int client)
@@ -454,6 +465,7 @@ public void OnClientPostAdminCheck(int client)
 
     RequestClientPointsCacheQuery(client, true);
     RequestFavoriteClassLoad(client);
+    RefreshClientRoundMvpFlag(client);
 }
 
 /*void AnnounceDefaultJoin(int client)

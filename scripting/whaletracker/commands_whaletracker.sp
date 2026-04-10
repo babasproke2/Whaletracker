@@ -267,7 +267,7 @@ public Action Command_ShowBonusPoints(int client, int args)
     char msg[512];
 
     FormatEx(msg, sizeof(msg),
-        "{green}[WhaleTracker]{default} %N's Bonus Points: {lightgreen}%i{default}\n"
+        "%N's Bonus Points: {lightgreen}%i{default}\n"
         ... "Killing an MVP: {lightgreen}+2\n"
         ... "+3{default} from Medic drops\n"
         ... "{lightgreen}+1{default} from Medic/Heavy kills, airshot kills, ubers, market gardens\n"
@@ -971,10 +971,10 @@ public void WhaleTracker_RefreshPointsCacheClearCallback(Database db, DBResultSe
         ... "FROM ("
         ... "SELECT w.steamid, %s AS points, "
         ... "COALESCE(NULLIF(w.cached_personaname,''), NULLIF(w.personaname,''), COALESCE(NULLIF(c.name,''), w.steamid)) AS name, "
-        ... "COALESCE(NULLIF(f.color,''), COALESCE(NULLIF(c.name_color,''), 'gold')) AS color, "
-        ... "COALESCE((SELECT p.newname FROM prename_rules p WHERE p.pattern = w.steamid LIMIT 1), COALESCE(NULLIF(c.prename,''), '')) AS prename "
+        ... "COALESCE(NULLIF(f.color COLLATE utf8mb4_uca1400_ai_ci,''), COALESCE(NULLIF(c.name_color,''), 'gold')) AS color, "
+        ... "COALESCE((SELECT p.newname COLLATE utf8mb4_uca1400_ai_ci FROM prename_rules p WHERE p.pattern = w.steamid COLLATE utf8mb4_general_ci LIMIT 1), COALESCE(NULLIF(c.prename,''), '')) AS prename "
         ... "FROM whaletracker w "
-        ... "LEFT JOIN filters_namecolors f ON f.steamid = w.steamid "
+        ... "LEFT JOIN filters_namecolors f ON f.steamid = w.steamid COLLATE utf8mb4_general_ci "
         ... "LEFT JOIN whaletracker_points_cache c ON c.steamid = w.steamid "
         ... "WHERE ((CASE WHEN w.kills > 0 THEN w.kills ELSE 0 END) + (CASE WHEN w.deaths > 0 THEN w.deaths ELSE 0 END)) >= %d "
         ... "AND (CASE WHEN w.playtime > 0 THEN w.playtime ELSE 0 END) >= %d"
