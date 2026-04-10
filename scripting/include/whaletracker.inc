@@ -1428,31 +1428,6 @@ bool WhaleTracker_CheckDamageGate(int client, int damage)
     return false;
 }
 
-int checkPointsDiff(int client1, int client2)
-{
-    if (!IsValidClient(client1) || !IsValidClient(client2))
-        return 0;
-    int points1 = GetWhalePointsForClient(client1);
-    int points2 = GetWhalePointsForClient(client2);
-    if (points1 <= points2)
-        return 0;
-    if (points1 < 1)
-        return 0;
-    if (points2 < 1)
-        return 0;
-
-    float diff = (float(points1) - float(points2)) / float(points2) * 100.0;
-
-    if (diff > 49.0)
-        return 3;
-    /*if (diff > 24.0)
-        return 2;
-    if (diff > 9.0)
-        return 1;*/ //I stopped caring for this
-
-    return 0;
-}
-
 void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
 {
     label[0] = '\0';
@@ -1490,6 +1465,18 @@ void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
     if (StrEqual(type, "airshot_kill", false))
     {
         strcopy(label, maxlen, "Airshot Kill");
+        return;
+    }
+
+    if (StrEqual(type, "uber_deployed", false))
+    {
+        strcopy(label, maxlen, "ÜberCharge");
+        return;
+    }
+
+    if (StrEqual(type, "market_garden", false))
+    {
+        strcopy(label, maxlen, "Market Garden");
         return;
     }
 }
@@ -1544,6 +1531,18 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
         char colorTag[32];
         GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
         CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {%s}%N{default}", sign, absPoints, colorTag, target);
+        return true;
+    }
+
+    if (StrEqual(type, "mvp_kill", false) && IsValidClient(target))
+    {
+        char colorTag[32];
+        GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
+        if (colorTag[0] == '\0')
+        {
+            strcopy(colorTag, sizeof(colorTag), "gold");
+        }
+        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {magenta}MVP {%s}%N{default}", sign, absPoints, colorTag, target);
         return true;
     }
 

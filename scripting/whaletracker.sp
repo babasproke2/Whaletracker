@@ -243,6 +243,8 @@ int g_iClientCachedRank[MAXPLAYERS + 1];
 char g_sClientCachedName[MAXPLAYERS + 1][128];
 char g_sClientCachedColor[MAXPLAYERS + 1][32];
 char g_sClientCachedPrename[MAXPLAYERS + 1][64];
+bool g_bRoundMvp[MAXPLAYERS + 1];
+Handle g_hRoundMvpTimer = null;
 
 bool g_bFavoriteClassLoaded[MAXPLAYERS + 1];
 bool g_bFavoriteClassPending[MAXPLAYERS + 1];

@@ -791,7 +791,7 @@ void QueueStatsSave(int client, int userId, bool forceSync)
         ... "medic_drops = GREATEST(medic_drops, VALUES(medic_drops)), "
         ... "uber_drops = GREATEST(uber_drops, VALUES(uber_drops)), "
         ... "airshots = GREATEST(airshots, VALUES(airshots)), "
-        ... "bonusPoints = GREATEST(bonusPoints, VALUES(bonusPoints)), "
+        ... "bonusPoints = VALUES(bonusPoints), "
         ... "medicKills = GREATEST(medicKills, VALUES(medicKills)), "
         ... "heavyKills = GREATEST(heavyKills, VALUES(heavyKills)), "
         ... "marketGardenHits = GREATEST(marketGardenHits, VALUES(marketGardenHits)), "
