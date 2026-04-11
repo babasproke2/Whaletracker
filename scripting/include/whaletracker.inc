@@ -795,11 +795,6 @@ bool WhaleTracker_ShouldUseMatchLogs()
     return (g_hEnableMatchLogs != null && g_hEnableMatchLogs.BoolValue);
 }
 
-bool WhaleTracker_UseManualPublicIp()
-{
-    return (g_hPublicIpMode != null && g_hPublicIpMode.IntValue == WT_PUBLIC_IP_MODE_MANUAL);
-}
-
 bool WhaleTracker_UseDeferredSavePump()
 {
     return (g_hDeferredSavePump != null && g_hDeferredSavePump.BoolValue);
@@ -808,16 +803,7 @@ bool WhaleTracker_UseDeferredSavePump()
 void RefreshPublicHostIp()
 {
     g_sPublicHostIp[0] = '\0';
-
-    if (WhaleTracker_UseManualPublicIp())
-    {
-        if (g_hPublicIpManual != null)
-        {
-            g_hPublicIpManual.GetString(g_sPublicHostIp, sizeof(g_sPublicHostIp));
-            TrimString(g_sPublicHostIp);
-        }
-    }
-    else if (WhaleTracker_IsNativeAvailable("SteamWorks_GetPublicIP"))
+    if (WhaleTracker_IsNativeAvailable("SteamWorks_GetPublicIP"))
     {
         int addr[4];
         if (SteamWorks_GetPublicIP(addr))

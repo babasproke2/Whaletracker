@@ -34,21 +34,6 @@ public void OnPluginStart()
         true,
         1.0
     );
-    g_hPublicIpMode = CreateConVar(
-        "sm_whaletracker_public_ip_mode",
-        "0",
-        "Public IP mode (0 = SteamWorks_GetPublicIP, 1 = sm_whaletracker_public_ip).",
-        FCVAR_NONE,
-        true,
-        0.0,
-        true,
-        1.0
-    );
-    g_hPublicIpManual = CreateConVar(
-        "sm_whaletracker_public_ip",
-        "",
-        "Manual public server IP used when sm_whaletracker_public_ip_mode is 1."
-    );
     g_hDeferredSavePump = CreateConVar(
         "sm_whaletracker_deferred_save_pump",
         "1",

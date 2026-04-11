@@ -29,8 +29,6 @@
 #define WHALE_LEADERBOARD_PAGE_SIZE 10
 #define WT_MARKET_GARDENER_DEF_INDEX 416
 #define WT_HANDSHAKE_DEF_INDEX 609
-#define WT_PUBLIC_IP_MODE_STEAMWORKS 0
-#define WT_PUBLIC_IP_MODE_MANUAL 1
 #define WT_AIRSHOT_MIN_HEIGHT 90.0
 #define TF_CLASS_HEAVY          6
 #define TF_CLASS_MEDIC          5
@@ -151,8 +149,6 @@ ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hGameName = null;
 ConVar g_hGameUrl = null;
 ConVar g_hEnableMatchLogs = null;
-ConVar g_hPublicIpMode = null;
-ConVar g_hPublicIpManual = null;
 ConVar g_hDeferredSavePump = null;
 bool g_bDatabaseReady = false;
 
