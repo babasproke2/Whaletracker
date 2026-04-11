@@ -7,6 +7,19 @@ public Plugin myinfo =
     url = "https://kogasa.tf"
 };
 
+void EnsurePointsCacheRefreshTimers(bool scheduleStartup = true)
+{
+    if (scheduleStartup && g_hPointsCacheRefreshTimer == null)
+    {
+        g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
+    }
+
+    if (g_hPointsCacheRefreshRepeatTimer == null)
+    {
+        g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT);
+    }
+}
+
 public void OnPluginStart()
 {
     if (g_SaveQueue != null)
@@ -117,16 +130,7 @@ public void OnPluginStart()
         CloseHandle(g_hPeriodicSaveTimer);
     }
     g_hPeriodicSaveTimer = CreateTimer(30.0, Timer_GlobalSave, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-    if (g_hPointsCacheRefreshTimer != null)
-    {
-        CloseHandle(g_hPointsCacheRefreshTimer);
-    }
-    g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
-    if (g_hPointsCacheRefreshRepeatTimer != null)
-    {
-        CloseHandle(g_hPointsCacheRefreshRepeatTimer);
-    }
-    g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    EnsurePointsCacheRefreshTimers();
 
     g_hAirshotForward = CreateGlobalForward("WhaleTracker_OnAirshot", ET_Ignore, Param_Cell, Param_Cell);
 
@@ -159,6 +163,7 @@ public void OnMapStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     ClearOnlineStats();
+    EnsurePointsCacheRefreshTimers();
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
     ResetMapMvpHistory();
