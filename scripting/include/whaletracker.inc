@@ -1510,6 +1510,7 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
     if (g_Stats[client].bonusPoints < 0)
         g_Stats[client].bonusPoints = 0;
 
+    QueueBonusPointsDeltaSave(client, points);
     MarkClientDirty(client);
 
     if (playSound)

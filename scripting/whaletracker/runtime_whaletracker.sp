@@ -241,7 +241,6 @@ public void OnPluginEnd()
                 continue;
             }
 
-            AccumulatePlaytime(i);
             SaveClientStats(i, false, true, true);
         }
 
@@ -421,7 +420,6 @@ public void OnClientDisconnect(int client)
         SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
     }
 
-    AccumulatePlaytime(client);
     SaveClientStats(client, true, true);
     CacheWhalePointsOnDisconnect(client);
     RemoveOnlineStats(client);
