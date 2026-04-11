@@ -172,10 +172,13 @@ public void OnMapStart()
         ResetMapStats(i);
         if (IsClientInGame(i))
         {
+            ResetClientCommandCaches(i);
             g_MapStats[i].connectTime = GetEngineTime();
         }
         g_KillSaveCounter[i] = 0;
     }
+
+    RefreshWhalePointsCacheAll();
 }
 
 public void OnMapEnd()
@@ -563,6 +566,8 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
     strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
     strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
+
+    QueueRoundMvpSelectionRetry();
 
     if (!announceJoin)
     {

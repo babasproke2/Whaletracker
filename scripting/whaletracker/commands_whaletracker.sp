@@ -235,6 +235,27 @@ public Action Command_ShowMvps(int client, int args)
     int currentRed = FindConnectedClientBySteamId(g_sRoundMvpSteamId[2]);
     int currentBlue = FindConnectedClientBySteamId(g_sRoundMvpSteamId[3]);
 
+    bool missingCurrentMvp = (currentRed <= 0 || currentBlue <= 0);
+
+    if (missingCurrentMvp)
+    {
+        if (g_hRoundMvpTimer != null)
+        {
+            CloseHandle(g_hRoundMvpTimer);
+            g_hRoundMvpTimer = null;
+        }
+
+        Timer_SetRoundMvps(INVALID_HANDLE, 0);
+
+        currentRed = FindConnectedClientBySteamId(g_sRoundMvpSteamId[2]);
+        currentBlue = FindConnectedClientBySteamId(g_sRoundMvpSteamId[3]);
+
+        if (currentRed > 0 && currentBlue > 0)
+        {
+            CPrintToChatAll("{magenta}MVPs{default} this round: {red}%N{default}, {blue}%N", currentRed, currentBlue);
+        }
+    }
+
     char currentRedName[256];
     char currentBlueName[256];
     bool hasCurrentRed = (currentRed > 0) || GetSteamIdRecordedName(g_sRoundMvpSteamId[2], currentRedName, sizeof(currentRedName));
@@ -1212,6 +1233,7 @@ public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResul
         RequestClientPointsCacheQuery(i);
     }
 
+    QueueRoundMvpSelectionRetry();
     PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table.");
 }
 
@@ -1300,7 +1322,7 @@ int GetWhalePointsForStats(const WhaleStats stats)
     return points;
 }
 
-int GetWhalePointsForClient(int client)
+public int GetWhalePointsForClient(int client)
 {
     if (client <= 0 || client > MaxClients || !IsClientInGame(client) || IsFakeClient(client))
     {
