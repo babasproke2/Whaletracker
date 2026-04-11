@@ -225,6 +225,80 @@ public Action Command_ShowPointsMe(int client, int args)
     return Plugin_Handled;
 }
 
+public Action Command_ShowMvps(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+
+    int currentRed = FindConnectedClientBySteamId(g_sRoundMvpSteamId[2]);
+    int currentBlue = FindConnectedClientBySteamId(g_sRoundMvpSteamId[3]);
+
+    char currentRedName[256];
+    char currentBlueName[256];
+    bool hasCurrentRed = (currentRed > 0) || GetSteamIdRecordedName(g_sRoundMvpSteamId[2], currentRedName, sizeof(currentRedName));
+    bool hasCurrentBlue = (currentBlue > 0) || GetSteamIdRecordedName(g_sRoundMvpSteamId[3], currentBlueName, sizeof(currentBlueName));
+
+    if (hasCurrentRed || hasCurrentBlue)
+    {
+        if (!hasCurrentRed)
+        {
+            strcopy(currentRedName, sizeof(currentRedName), "None");
+        }
+        if (!hasCurrentBlue)
+        {
+            strcopy(currentBlueName, sizeof(currentBlueName), "None");
+        }
+
+        if (currentRed > 0 && currentBlue > 0)
+        {
+            CPrintToChat(client, "{magenta}Current MVPs{default}: {red}%N{default}, {blue}%N", currentRed, currentBlue);
+        }
+        else if (currentRed > 0)
+        {
+            CPrintToChat(client, "{magenta}Current MVPs{default}: {red}%N{default}, {blue}%s{default}", currentRed, currentBlueName);
+        }
+        else if (currentBlue > 0)
+        {
+            CPrintToChat(client, "{magenta}Current MVPs{default}: {red}%s{default}, {blue}%N", currentRedName, currentBlue);
+        }
+        else
+        {
+            CPrintToChat(client, "{magenta}Current MVPs{default}: {red}%s{default}, {blue}%s{default}", currentRedName, currentBlueName);
+        }
+    }
+    else
+    {
+        CPrintToChat(client, "{magenta}Current MVPs{default}: None");
+    }
+
+    char lastRed[256];
+    char lastBlue[256];
+    bool hasLastRed = GetSteamIdColoredDisplayName(g_sLastRoundMvpSteamId[2], lastRed, sizeof(lastRed));
+    bool hasLastBlue = GetSteamIdColoredDisplayName(g_sLastRoundMvpSteamId[3], lastBlue, sizeof(lastBlue));
+
+    if (hasLastRed || hasLastBlue)
+    {
+        if (!hasLastRed)
+        {
+            strcopy(lastRed, sizeof(lastRed), "None");
+        }
+        if (!hasLastBlue)
+        {
+            strcopy(lastBlue, sizeof(lastBlue), "None");
+        }
+
+        CPrintToChat(client, "{magenta}Last round MVPs{default}: %s, %s", lastRed, lastBlue);
+    }
+    else
+    {
+        CPrintToChat(client, "{magenta}Last round MVPs{default}: None");
+    }
+
+    return Plugin_Handled;
+}
+
 public Action Command_ShowMarketGardens(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
@@ -620,6 +694,129 @@ void GetClientChatDisplayName(int client, char[] buffer, int maxlen)
         GetClientName(client, buffer, maxlen);
         TrimString(buffer);
     }
+}
+
+int FindConnectedClientBySteamId(const char[] steamId)
+{
+    if (steamId[0] == '\0')
+    {
+        return 0;
+    }
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        char clientSteamId[STEAMID64_LEN];
+        if (!GetClientAuthId(i, AuthId_SteamID64, clientSteamId, sizeof(clientSteamId)))
+        {
+            continue;
+        }
+
+        if (StrEqual(clientSteamId, steamId, false))
+        {
+            return i;
+        }
+    }
+
+    return 0;
+}
+
+bool GetSteamIdRecordedName(const char[] steamId, char[] buffer, int maxlen)
+{
+    buffer[0] = '\0';
+
+    if (steamId[0] == '\0')
+    {
+        return false;
+    }
+
+    int client = FindConnectedClientBySteamId(steamId);
+    if (client > 0)
+    {
+        GetClientName(client, buffer, maxlen);
+        TrimString(buffer);
+        return (buffer[0] != '\0');
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return false;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char query[768];
+    Format(query, sizeof(query),
+        "SELECT COALESCE("
+        ... "NULLIF(pc.prename, ''), "
+        ... "NULLIF(pc.name, ''), "
+        ... "NULLIF(w.cached_personaname, ''), "
+        ... "NULLIF(w.personaname, ''), "
+        ... "''"
+        ... ") "
+        ... "FROM (SELECT '%s' AS steamid) s "
+        ... "LEFT JOIN whaletracker w ON w.steamid = s.steamid "
+        ... "LEFT JOIN whaletracker_points_cache pc ON pc.steamid = s.steamid "
+        ... "LIMIT 1",
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        return false;
+    }
+
+    bool found = false;
+    if (results.FetchRow())
+    {
+        results.FetchString(0, buffer, maxlen);
+        TrimString(buffer);
+        found = (buffer[0] != '\0');
+    }
+
+    delete results;
+    return found;
+}
+
+bool GetSteamIdColoredDisplayName(const char[] steamId, char[] buffer, int maxlen)
+{
+    buffer[0] = '\0';
+
+    if (steamId[0] == '\0')
+    {
+        return false;
+    }
+
+    int client = FindConnectedClientBySteamId(steamId);
+    if (client > 0)
+    {
+        GetClientChatDisplayName(client, buffer, maxlen);
+        return (buffer[0] != '\0');
+    }
+
+    char name[256];
+    if (!GetSteamIdRecordedName(steamId, name, sizeof(name)))
+    {
+        return false;
+    }
+
+    char colorTag[32];
+    GetNameColorTagForSteamId(steamId, colorTag, sizeof(colorTag));
+    if (colorTag[0] != '\0')
+    {
+        Format(buffer, maxlen, "{%s}%s{default}", colorTag, name);
+    }
+    else
+    {
+        strcopy(buffer, maxlen, name);
+    }
+
+    return (buffer[0] != '\0');
 }
 
 void GetFavoriteClassDisplayName(int favoriteClass, char[] buffer, int maxlen)

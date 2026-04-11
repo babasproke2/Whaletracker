@@ -107,7 +107,7 @@ bool WhaleTracker_AreClientStatsReady(int client)
 
 bool WhaleTracker_IsRoundRunning()
 {
-    return (GameRules_GetProp("m_nRoundState") == 4);
+    return (GameRules_GetRoundState() == RoundState_RoundRunning);
 }
 
 void WhaleTracker_RefreshClientTrackingState(int client)

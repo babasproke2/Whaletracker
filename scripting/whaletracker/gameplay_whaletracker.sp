@@ -15,10 +15,27 @@ void ClearRoundMvpIdentity()
     g_sRoundMvpSteamId[3][0] = '\0';
 }
 
+void ClearLastRoundMvpIdentity()
+{
+    g_sLastRoundMvpSteamId[2][0] = '\0';
+    g_sLastRoundMvpSteamId[3][0] = '\0';
+}
+
 void ClearCurrentRoundMvpState()
 {
     ClearRoundMvpFlags();
     ClearRoundMvpIdentity();
+}
+
+void ClearLastRoundMvpState()
+{
+    ClearLastRoundMvpIdentity();
+}
+
+void SnapshotCurrentRoundMvpStateToLastRound()
+{
+    strcopy(g_sLastRoundMvpSteamId[2], sizeof(g_sLastRoundMvpSteamId[]), g_sRoundMvpSteamId[2]);
+    strcopy(g_sLastRoundMvpSteamId[3], sizeof(g_sLastRoundMvpSteamId[]), g_sRoundMvpSteamId[3]);
 }
 
 void ResetMapMvpHistory()
@@ -109,6 +126,7 @@ void AssignRoundMvp(int client, int team)
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+    SnapshotCurrentRoundMvpStateToLastRound();
     ClearCurrentRoundMvpState();
 
     if (g_hRoundMvpTimer != null)

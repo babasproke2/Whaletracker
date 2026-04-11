@@ -244,6 +244,7 @@ char g_sClientCachedColor[MAXPLAYERS + 1][32];
 char g_sClientCachedPrename[MAXPLAYERS + 1][64];
 bool g_bRoundMvp[MAXPLAYERS + 1];
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
+char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
 StringMap g_hMapMvpSteamIds = null;
 Handle g_hRoundMvpTimer = null;
 
