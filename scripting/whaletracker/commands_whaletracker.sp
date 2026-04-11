@@ -1428,6 +1428,71 @@ public any Native_WhaleTracker_ApplyBonusPoints(Handle plugin, int numParams)
     return ApplyBonusPoints(client, points, playSound, chatAlert, randomChance, type, target, delay);
 }
 
+int GetLastSeenForSteamId64(const char[] steamId)
+{
+    if (steamId[0] == '\0')
+    {
+        return 0;
+    }
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        char clientSteamId[STEAMID64_LEN];
+        if (!GetClientAuthId(i, AuthId_SteamID64, clientSteamId, sizeof(clientSteamId)))
+        {
+            continue;
+        }
+
+        if (!StrEqual(clientSteamId, steamId, false))
+        {
+            continue;
+        }
+
+        if (g_Stats[i].lastSeen > 0)
+        {
+            return g_Stats[i].lastSeen;
+        }
+
+        break;
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return 0;
+    }
+
+    char escapedSteamId[STEAMID64_LEN * 2];
+    EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
+
+    char query[256];
+    Format(query, sizeof(query),
+        "SELECT COALESCE(last_seen, 0) FROM whaletracker WHERE steamid = '%s' LIMIT 1",
+        escapedSteamId);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] LastSeen query failed: %s", error);
+        return 0;
+    }
+
+    int lastSeen = 0;
+    if (results.FetchRow())
+    {
+        lastSeen = results.FetchInt(0);
+    }
+
+    delete results;
+    return lastSeen;
+}
+
 public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)
 {
     char steamId[STEAMID64_LEN];
@@ -1524,4 +1589,11 @@ public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)
     delete results;
     SetNativeString(2, name, maxlen, true);
     return found;
+}
+
+public any Native_WhaleTracker_GetLastSeen(Handle plugin, int numParams)
+{
+    char steamId[STEAMID64_LEN];
+    GetNativeString(1, steamId, sizeof(steamId));
+    return GetLastSeenForSteamId64(steamId);
 }

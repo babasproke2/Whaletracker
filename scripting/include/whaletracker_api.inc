@@ -77,6 +77,18 @@ stock bool ApplyBonusPoints(int client, int points = 1, bool playSound = true, b
 native bool WhaleTracker_GetLastRecordedName(const char[] steamId64, char[] buffer, int maxlen);
 
 /**
+ * Returns the best known last_seen timestamp for a SteamID64.
+ *
+ * Lookup order:
+ * 1. Connected live client's in-memory lastSeen
+ * 2. whaletracker.last_seen
+ *
+ * @param steamId64     SteamID64 to look up.
+ * @return              Unix timestamp, or 0 if unavailable.
+ */
+native int WhaleTracker_GetLastSeen(const char[] steamId64);
+
+/**
  * Fired when WhaleTracker records an airshot.
  *
  * @param attacker      Attacker client index.
