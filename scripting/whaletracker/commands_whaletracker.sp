@@ -320,6 +320,50 @@ public Action Command_ShowMvps(int client, int args)
     return Plugin_Handled;
 }
 
+public Action Command_ShowLastSeen(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
+    {
+        return Plugin_Handled;
+    }
+
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Database is not ready.");
+        return Plugin_Handled;
+    }
+
+    char search[128];
+    GetCmdArgString(search, sizeof(search));
+    TrimString(search);
+
+    if (search[0] == '\0')
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} Usage: !seen <name>");
+        return Plugin_Handled;
+    }
+
+    char steamId[STEAMID64_LEN];
+    char matchedName[256];
+    if (!FindSeenMatch(search, steamId, sizeof(steamId), matchedName, sizeof(matchedName)))
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} No cached name matched '%s'.", search);
+        return Plugin_Handled;
+    }
+
+    int lastSeen = GetLastSeenForSteamId64(steamId);
+    if (lastSeen <= 0)
+    {
+        CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} has no last seen data.", matchedName);
+        return Plugin_Handled;
+    }
+
+    char timestamp[32];
+    FormatTime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", lastSeen);
+    CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} last seen: {gold}%s", matchedName, timestamp);
+    return Plugin_Handled;
+}
+
 public Action Command_ShowMarketGardens(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
@@ -838,6 +882,62 @@ bool GetSteamIdColoredDisplayName(const char[] steamId, char[] buffer, int maxle
     }
 
     return (buffer[0] != '\0');
+}
+
+bool FindSeenMatch(const char[] search, char[] steamId, int steamIdLen, char[] matchedName, int matchedNameLen)
+{
+    steamId[0] = '\0';
+    matchedName[0] = '\0';
+
+    if (search[0] == '\0' || !g_bDatabaseReady || g_hDatabase == null)
+    {
+        return false;
+    }
+
+    char escapedSearch[256];
+    EscapeSqlString(search, escapedSearch, sizeof(escapedSearch));
+
+    char query[1536];
+    Format(query, sizeof(query),
+        "SELECT w.steamid, COALESCE(NULLIF(pc.prename, ''), NULLIF(pc.name, ''), NULLIF(w.cached_personaname, ''), NULLIF(w.personaname, ''), w.steamid) "
+        ... "FROM whaletracker w "
+        ... "LEFT JOIN whaletracker_points_cache pc ON pc.steamid = w.steamid "
+        ... "WHERE INSTR(COALESCE(w.cached_personaname_lower, ''), '%s') > 0 OR INSTR(w.steamid, '%s') > 0 "
+        ... "ORDER BY CASE "
+        ... "WHEN COALESCE(w.cached_personaname_lower, '') = '%s' THEN 0 "
+        ... "WHEN LEFT(COALESCE(w.cached_personaname_lower, ''), CHAR_LENGTH('%s')) = '%s' THEN 1 "
+        ... "WHEN w.steamid = '%s' THEN 0 "
+        ... "ELSE 2 END, "
+        ... "COALESCE(w.last_seen, 0) DESC, w.steamid ASC "
+        ... "LIMIT 1",
+        escapedSearch,
+        escapedSearch,
+        escapedSearch,
+        escapedSearch,
+        escapedSearch,
+        escapedSearch);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] Seen match query failed: %s", error);
+        return false;
+    }
+
+    bool found = false;
+    if (results.FetchRow())
+    {
+        results.FetchString(0, steamId, steamIdLen);
+        results.FetchString(1, matchedName, matchedNameLen);
+        TrimString(steamId);
+        TrimString(matchedName);
+        found = (steamId[0] != '\0');
+    }
+
+    delete results;
+    return found;
 }
 
 void GetFavoriteClassDisplayName(int favoriteClass, char[] buffer, int maxlen)
