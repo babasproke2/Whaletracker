@@ -393,11 +393,11 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
     int victim = GetClientOfUserId(event.GetInt("userid"));
     int attacker = GetClientOfUserId(event.GetInt("attacker"));
     int assister = GetClientOfUserId(event.GetInt("assister"));
-    int deathFlags = GetUserFlagBits(victim);
+    int deathFlags = event.GetInt("death_flags");
     int victimClass = view_as<int>(TF2_GetPlayerClass(victim));
     bool attackerScoredMedicDrop = false;
 
-    if (!(deathFlags & 32))
+    if (!(deathFlags & TF_DEATHFLAG_DEADRINGER))
     {
         if (IsValidClient(attacker) && attacker != victim && WhaleTracker_IsTrackingEnabled(attacker))
         {
@@ -425,6 +425,14 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
                 g_Stats[attacker].totalHeavyKills++;
                 ApplyBonusPoints(attacker, 1, true, true, 1.0, "heavy_kill");
             }
+            if (deathFlags & TF_DEATHFLAG_KILLERDOMINATION)
+            {
+                ApplyBonusPoints(attacker, 2, true, true, 1.0, "player_dom", victim);
+            }
+            if (deathFlags & TF_DEATHFLAG_KILLERREVENGE)
+            {
+                ApplyBonusPoints(attacker, 1, true, true, 1.0, "player_revenge", victim);
+            }
             attackerScoredMedicDrop = medicDrop;
             MarkClientDirty(attacker);
         }
@@ -433,6 +441,14 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
         {
             ApplyAssistStats(g_Stats[assister]);
             ApplyAssistStats(g_MapStats[assister]);
+            if (deathFlags & TF_DEATHFLAG_ASSISTERDOMINATION)
+            {
+                ApplyBonusPoints(assister, 1, true, true, 1.0, "player_dom", victim);
+            }
+            if (deathFlags & TF_DEATHFLAG_ASSISTERREVENGE)
+            {
+                ApplyBonusPoints(assister, 1, true, true, 1.0, "player_revenge", victim);
+            }
             MarkClientDirty(assister);
         }
 

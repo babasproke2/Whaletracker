@@ -1472,6 +1472,18 @@ void GetBonusPointsTypeLabel(const char[] type, char[] label, int maxlen)
         strcopy(label, maxlen, "Market Garden");
         return;
     }
+
+    if (StrEqual(type, "player_dom", false))
+    {
+        strcopy(label, maxlen, "Dominating");
+        return;
+    }
+
+    if (StrEqual(type, "player_revenge", false))
+    {
+        strcopy(label, maxlen, "Revenge");
+        return;
+    }
 }
 
 bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool chatAlert = true, float randomChance = 1.0, const char[] type = "", int target = 0)
@@ -1537,6 +1549,18 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
             strcopy(colorTag, sizeof(colorTag), "gold");
         }
         CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {magenta}MVP {%s}%N{default}", sign, absPoints, colorTag, target);
+        return true;
+    }
+
+    if (StrEqual(type, "player_dom", false) && IsValidClient(target))
+    {
+        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for Dominating %N", sign, absPoints, target);
+        return true;
+    }
+
+    if (StrEqual(type, "player_revenge", false) && IsValidClient(target))
+    {
+        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for Revenge on %N", sign, absPoints, target);
         return true;
     }
 

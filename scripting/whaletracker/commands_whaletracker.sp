@@ -407,10 +407,9 @@ public Action Command_ShowBonusPoints(int client, int args)
 
     FormatEx(msg, sizeof(msg),
         "%N's Bonus Points: {lightgreen}%i{default}\n"
-        ... "Killing an MVP: {lightgreen}+2\n"
-        ... "+3{default} from Medic drops\n"
-        ... "{lightgreen}+1{default} from Medic/Heavy kills, airshot kills, ubers, market gardens\n"
-        ... "Bonus points are dispensed on a 3 second delay; listen for {gold}!xp_gain\n",
+        ... "{lightgreen}+3{default}: Medic drops\n"
+        ... "{lightgreen}+2{default}: !mvp kills, Dominations\n"
+        ... "{lightgreen}+1:{default} Medic/Heavy kills, airshot kills, ubers, market gardens, revenge",
         target,
         g_Stats[target].bonusPoints);
 
