@@ -30,6 +30,20 @@ native bool WhaleTracker_AreStatsLoaded(int client);
 native int WhaleTracker_GetWhalePoints(int client);
 
 /**
+ * Computes Whale Points from raw cumulative totals.
+ *
+ * @param kills         Total kills.
+ * @param deaths        Total deaths.
+ * @param assists       Total assists.
+ * @param totalUbers    Total ubers.
+ * @param damageDealt   Total damage dealt.
+ * @param healing       Total healing.
+ * @param playtime      Total playtime in seconds.
+ * @return              Whale Points for the merged totals.
+ */
+native int WhaleTracker_ComputeWhalePoints(int kills, int deaths, int assists, int totalUbers, int damageDealt, int healing, int playtime);
+
+/**
  * Returns whether a client is the stored MVP for their current team this round.
  *
  * @param client        Client index.

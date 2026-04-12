@@ -1532,6 +1532,19 @@ public any Native_WhaleTracker_GetWhalePoints(Handle plugin, int numParams)
     return GetWhalePointsForClient(client);
 }
 
+public any Native_WhaleTracker_ComputeWhalePoints(Handle plugin, int numParams)
+{
+    WhaleStats pointStats;
+    pointStats.kills = GetNativeCell(1);
+    pointStats.deaths = GetNativeCell(2);
+    pointStats.totalAssists = GetNativeCell(3);
+    pointStats.totalUbers = GetNativeCell(4);
+    pointStats.totalDamage = GetNativeCell(5);
+    pointStats.totalHealing = GetNativeCell(6);
+    pointStats.playtime = GetNativeCell(7);
+    return GetWhalePointsForStats(pointStats);
+}
+
 public any Native_WhaleTracker_IsCurrentRoundMvp(Handle plugin, int numParams)
 {
     int client = GetNativeCell(1);
