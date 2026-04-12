@@ -30,6 +30,8 @@ public void T_SQLConnect(Database db, const char[] error, any data)
 
     g_hDatabase = db;
     g_bDatabaseReady = true;
+    ResetPointsCacheRefreshState();
+    EnsurePointsCacheRefreshTimers();
 
     if (!g_hDatabase.SetCharset("utf8mb4"))
     {

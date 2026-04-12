@@ -486,6 +486,7 @@ void WhaleTracker_ScheduleReconnect(float delay)
     }
 
     g_bDatabaseReady = false;
+    ResetPointsCacheRefreshState();
 
     if (g_hDatabase != null)
     {

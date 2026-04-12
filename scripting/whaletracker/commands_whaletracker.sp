@@ -1257,25 +1257,41 @@ void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerNam
 
 void RefreshWhalePointsCacheAll()
 {
+    RecoverStalePointsCacheRefreshState();
+
     if (!g_bDatabaseReady || g_hDatabase == null || g_bPointsCacheRefreshInFlight)
     {
         return;
     }
 
     g_bPointsCacheRefreshInFlight = true;
+    g_flPointsCacheRefreshStartedAt = GetEngineTime();
+    g_iPointsCacheRefreshSerial++;
+    int refreshSerial = g_iPointsCacheRefreshSerial;
 
     char query[256];
     Format(query, sizeof(query),
         "UPDATE whaletracker_points_cache SET points = 0, rank = 0, updated_at = 0");
-    g_hDatabase.Query(WhaleTracker_RefreshPointsCacheClearCallback, query);
+    g_hDatabase.Query(WhaleTracker_RefreshPointsCacheClearCallback, query, refreshSerial);
 }
 
 public void WhaleTracker_RefreshPointsCacheClearCallback(Database db, DBResultSet results, const char[] error, any data)
 {
+    int refreshSerial = data;
+    if (refreshSerial != g_iPointsCacheRefreshSerial)
+    {
+        return;
+    }
+
     if (error[0] != '\0')
     {
         g_bPointsCacheRefreshInFlight = false;
+        g_flPointsCacheRefreshStartedAt = 0.0;
         LogError("[WhaleTracker] Failed to clear points cache: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
         return;
     }
 
@@ -1309,19 +1325,31 @@ public void WhaleTracker_RefreshPointsCacheClearCallback(Database db, DBResultSe
         WHALE_POINTS_SQL_EXPR,
         WHALE_RANK_MIN_KD_SUM,
         WHALE_RANK_MIN_PLAYTIME_SECONDS);
-    db.Query(WhaleTracker_RefreshPointsCachePopulateCallback, query);
+    db.Query(WhaleTracker_RefreshPointsCachePopulateCallback, query, refreshSerial);
 }
 
 public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResultSet results, const char[] error, any data)
 {
+    int refreshSerial = data;
+    if (refreshSerial != g_iPointsCacheRefreshSerial)
+    {
+        return;
+    }
+
     if (error[0] != '\0')
     {
         g_bPointsCacheRefreshInFlight = false;
+        g_flPointsCacheRefreshStartedAt = 0.0;
         LogError("[WhaleTracker] Failed to rebuild points cache: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
         return;
     }
 
     g_bPointsCacheRefreshInFlight = false;
+    g_flPointsCacheRefreshStartedAt = 0.0;
 
     for (int i = 1; i <= MaxClients; i++)
     {

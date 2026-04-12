@@ -230,6 +230,8 @@ Handle g_hPointsCacheRefreshTimer = null;
 Handle g_hPointsCacheRefreshRepeatTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
+int g_iPointsCacheRefreshSerial = 0;
+float g_flPointsCacheRefreshStartedAt = 0.0;
 
 bool g_bClientPointsCacheLoaded[MAXPLAYERS + 1];
 bool g_bClientPointsCachePending[MAXPLAYERS + 1];

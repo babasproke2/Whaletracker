@@ -7,6 +7,40 @@ public Plugin myinfo =
     url = "https://kogasa.tf"
 };
 
+void ResetPointsCacheRefreshState(bool resetClientPending = true)
+{
+    g_bPointsCacheRefreshInFlight = false;
+    g_flPointsCacheRefreshStartedAt = 0.0;
+    g_iPointsCacheRefreshSerial++;
+
+    if (!resetClientPending)
+    {
+        return;
+    }
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        g_bClientPointsCachePending[i] = false;
+    }
+}
+
+bool RecoverStalePointsCacheRefreshState(float maxAge = 180.0)
+{
+    if (!g_bPointsCacheRefreshInFlight)
+    {
+        return false;
+    }
+
+    if (g_flPointsCacheRefreshStartedAt > 0.0 && (GetEngineTime() - g_flPointsCacheRefreshStartedAt) < maxAge)
+    {
+        return false;
+    }
+
+    LogError("[WhaleTracker] Resetting stale points cache refresh state.");
+    ResetPointsCacheRefreshState();
+    return true;
+}
+
 void EnsurePointsCacheRefreshTimers(bool scheduleStartup = true)
 {
     if (scheduleStartup && g_hPointsCacheRefreshTimer == null)
@@ -201,6 +235,8 @@ public Action Timer_RefreshWhalePointsCacheStartup(Handle timer, any data)
 {
     g_hPointsCacheRefreshTimer = null;
 
+    RecoverStalePointsCacheRefreshState();
+
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
         g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
@@ -213,6 +249,8 @@ public Action Timer_RefreshWhalePointsCacheStartup(Handle timer, any data)
 
 public Action Timer_RefreshWhalePointsCacheRolling(Handle timer, any data)
 {
+    RecoverStalePointsCacheRefreshState();
+
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
         return Plugin_Continue;
@@ -529,6 +567,10 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to query points cache for join message: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
     }
 
     int points = 0;
