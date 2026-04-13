@@ -31,7 +31,7 @@ bool RecoverStalePointsCacheRefreshState(float maxAge = 180.0)
         return false;
     }
 
-    if (g_flPointsCacheRefreshStartedAt > 0.0 && (GetEngineTime() - g_flPointsCacheRefreshStartedAt) < maxAge)
+    if (g_flPointsCacheRefreshStartedAt > 0.0 && (GetTickedTime() - g_flPointsCacheRefreshStartedAt) < maxAge)
     {
         return false;
     }
@@ -41,13 +41,8 @@ bool RecoverStalePointsCacheRefreshState(float maxAge = 180.0)
     return true;
 }
 
-void EnsurePointsCacheRefreshTimers(bool scheduleStartup = true)
+void EnsurePointsCacheRefreshTimers()
 {
-    if (scheduleStartup && g_hPointsCacheRefreshTimer == null)
-    {
-        g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
-    }
-
     if (g_hPointsCacheRefreshRepeatTimer == null)
     {
         g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT);
@@ -198,6 +193,7 @@ public void OnMapStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     ClearOnlineStats();
+    ResetPointsCacheRefreshState(false);
     EnsurePointsCacheRefreshTimers();
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
@@ -229,22 +225,6 @@ public void OnMapEnd()
     FlushSaveQueueSync();
     FinalizeCurrentMatch(false);
     WhaleTracker_RustFlushSqlBatch();
-}
-
-public Action Timer_RefreshWhalePointsCacheStartup(Handle timer, any data)
-{
-    g_hPointsCacheRefreshTimer = null;
-
-    RecoverStalePointsCacheRefreshState();
-
-    if (!g_bDatabaseReady || g_hDatabase == null)
-    {
-        g_hPointsCacheRefreshTimer = CreateTimer(10.0, Timer_RefreshWhalePointsCacheStartup, _, TIMER_FLAG_NO_MAPCHANGE);
-        return Plugin_Stop;
-    }
-
-    RefreshWhalePointsCacheAll();
-    return Plugin_Stop;
 }
 
 public Action Timer_RefreshWhalePointsCacheRolling(Handle timer, any data)
@@ -339,7 +319,6 @@ public void OnPluginEnd()
     // invalid by the time OnPluginEnd runs.
     g_hOnlineTimer = null;
     g_hPeriodicSaveTimer = null;
-    g_hPointsCacheRefreshTimer = null;
     g_hPointsCacheRefreshRepeatTimer = null;
     g_hRoundMvpTimer = null;
     g_hReconnectTimer = null;

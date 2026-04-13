@@ -1264,7 +1264,7 @@ void RefreshWhalePointsCacheAll()
     }
 
     g_bPointsCacheRefreshInFlight = true;
-    g_flPointsCacheRefreshStartedAt = GetEngineTime();
+    g_flPointsCacheRefreshStartedAt = GetTickedTime();
     g_iPointsCacheRefreshSerial++;
     int refreshSerial = g_iPointsCacheRefreshSerial;
 

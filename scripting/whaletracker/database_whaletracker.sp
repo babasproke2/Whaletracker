@@ -500,6 +500,8 @@ public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS prename VARCHAR(64) DEFAULT ''");
     g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS rank INTEGER DEFAULT 0");
+
+    RefreshWhalePointsCacheAll();
 }
 
 public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const char[] error, any data)

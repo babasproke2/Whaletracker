@@ -227,7 +227,6 @@ bool g_bShuttingDown = false;
 Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
-Handle g_hPointsCacheRefreshTimer = null;
 Handle g_hPointsCacheRefreshRepeatTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
