@@ -43,10 +43,12 @@ bool RecoverStalePointsCacheRefreshState(float maxAge = 180.0)
 
 void EnsurePointsCacheRefreshTimers()
 {
-    if (g_hPointsCacheRefreshRepeatTimer == null)
+    if (g_hPointsCacheRefreshRepeatTimer != null)
     {
-        g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT);
+        return;
     }
+
+    g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public void OnPluginStart()
@@ -214,6 +216,12 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
+    if (g_hPointsCacheRefreshRepeatTimer != null)
+    {
+        CloseHandle(g_hPointsCacheRefreshRepeatTimer);
+        g_hPointsCacheRefreshRepeatTimer = null;
+    }
+
     for (int i = 1; i <= MaxClients; i++)
     {
         if (IsValidClient(i) && !IsFakeClient(i))
