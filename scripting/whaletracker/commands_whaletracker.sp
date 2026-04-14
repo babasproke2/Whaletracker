@@ -239,11 +239,7 @@ public Action Command_ShowMvps(int client, int args)
 
     if (missingCurrentMvp)
     {
-        if (g_hRoundMvpTimer != null)
-        {
-            CloseHandle(g_hRoundMvpTimer);
-            g_hRoundMvpTimer = null;
-        }
+        g_hRoundMvpTimer = null;
 
         Timer_SetRoundMvps(INVALID_HANDLE, 0);
 

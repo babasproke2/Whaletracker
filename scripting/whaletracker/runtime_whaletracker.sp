@@ -197,6 +197,7 @@ public void OnMapStart()
     ClearOnlineStats();
     ResetPointsCacheRefreshState(false);
     EnsurePointsCacheRefreshTimers();
+    g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
     ResetMapMvpHistory();
@@ -221,6 +222,8 @@ public void OnMapEnd()
         CloseHandle(g_hPointsCacheRefreshRepeatTimer);
         g_hPointsCacheRefreshRepeatTimer = null;
     }
+
+    g_hRoundMvpTimer = null;
 
     for (int i = 1; i <= MaxClients; i++)
     {

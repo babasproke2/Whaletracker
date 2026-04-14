@@ -229,17 +229,18 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
     SnapshotCurrentRoundMvpStateToLastRound();
     ClearCurrentRoundMvpState();
-
-    if (g_hRoundMvpTimer != null)
-    {
-        CloseHandle(g_hRoundMvpTimer);
-    }
+    g_hRoundMvpTimer = null;
 
     QueueRoundMvpSelectionRetry(1.0, 0);
 }
 
 public Action Timer_SetRoundMvps(Handle timer, any data)
 {
+    if (timer != INVALID_HANDLE && timer != g_hRoundMvpTimer)
+    {
+        return Plugin_Stop;
+    }
+
     g_hRoundMvpTimer = null;
 
     int attempt = data;
