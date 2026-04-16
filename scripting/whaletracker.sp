@@ -103,6 +103,10 @@ enum ClientPointsCacheState
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
 void RequestClientStateLoads(int client);
 int GetWhalePointsForClient(int client);
+public void RequestWhalePointsCacheRefresh();
+public void QueueRoundMvpSelection();
+bool IsClientPointsCacheFresh(int client, int maxAge);
+public void TryFlushPendingPointsRepliesForTarget(int target);
 
 enum struct WhaleStats
 {
@@ -236,15 +240,17 @@ bool g_bShuttingDown = false;
 Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
-Handle g_hPointsCacheRefreshRepeatTimer = null;
+Handle g_hPointsCacheWarmupTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
+bool g_bPointsCacheRefreshQueued = false;
 int g_iPointsCacheRefreshSerial = 0;
-float g_flPointsCacheRefreshStartedAt = 0.0;
+int g_iPointsCacheLastBuiltAt = 0;
 
 ClientPointsCacheState g_eClientPointsCacheState[MAXPLAYERS + 1];
 int g_iClientCachedPoints[MAXPLAYERS + 1];
 int g_iClientCachedRank[MAXPLAYERS + 1];
+int g_iClientCachedUpdatedAt[MAXPLAYERS + 1];
 char g_sClientCachedName[MAXPLAYERS + 1][128];
 char g_sClientCachedColor[MAXPLAYERS + 1][32];
 char g_sClientCachedPrename[MAXPLAYERS + 1][64];
@@ -252,6 +258,11 @@ bool g_bRoundMvp[MAXPLAYERS + 1];
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
 Handle g_hRoundMvpTimer = null;
+bool g_bRoundMvpSelectionAfterRefresh = false;
+bool g_bPendingPointsReply[MAXPLAYERS + 1];
+bool g_bPendingPointsReplyBroadcast[MAXPLAYERS + 1];
+int g_iPendingPointsReplyTargetUserId[MAXPLAYERS + 1];
+StringMap g_MapMvpHistory = null;
 
 bool g_bFavoriteClassLoaded[MAXPLAYERS + 1];
 bool g_bFavoriteClassPending[MAXPLAYERS + 1];

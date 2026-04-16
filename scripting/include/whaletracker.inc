@@ -110,6 +110,31 @@ bool WhaleTracker_IsRoundRunning()
     return (GameRules_GetRoundState() == RoundState_RoundRunning);
 }
 
+public bool IsClientPointsCacheFresh(int client, int maxAge)
+{
+    if (client <= 0 || client > MaxClients || g_eClientPointsCacheState[client] != ClientPointsCacheState_Ready)
+    {
+        return false;
+    }
+
+    if (g_iClientCachedUpdatedAt[client] <= 0)
+    {
+        return false;
+    }
+
+    return ((GetTime() - g_iClientCachedUpdatedAt[client]) <= maxAge);
+}
+
+bool IsWhalePointsCacheGloballyFresh(int maxAge)
+{
+    if (g_iPointsCacheLastBuiltAt <= 0)
+    {
+        return false;
+    }
+
+    return ((GetTime() - g_iPointsCacheLastBuiltAt) <= maxAge);
+}
+
 void WhaleTracker_RefreshClientTrackingState(int client)
 {
     if (client <= 0 || client > MaxClients)

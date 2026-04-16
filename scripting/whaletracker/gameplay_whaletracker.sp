@@ -87,13 +87,35 @@ void AssignRoundMvp(int client, int team)
     RefreshClientRoundMvpFlag(client);
 }
 
-void QueueRoundMvpSelectionRetry(float delay, int attempt)
+bool HasSteamIdBeenMapMvp(const char[] steamId)
 {
-    if (!WhaleTracker_IsRoundRunning())
+    if (steamId[0] == '\0' || g_MapMvpHistory == null)
+    {
+        return false;
+    }
+
+    int seen = 0;
+    return g_MapMvpHistory.GetValue(steamId, seen);
+}
+
+void MarkSteamIdAsMapMvp(const char[] steamId)
+{
+    if (steamId[0] == '\0' || g_MapMvpHistory == null)
     {
         return;
     }
 
+    g_MapMvpHistory.SetValue(steamId, 1, true);
+}
+
+void PromoteCurrentRoundMvpsToHistory()
+{
+    MarkSteamIdAsMapMvp(g_sRoundMvpSteamId[2]);
+    MarkSteamIdAsMapMvp(g_sRoundMvpSteamId[3]);
+}
+
+public void QueueRoundMvpSelection()
+{
     if (g_hRoundMvpTimer != null)
     {
         return;
@@ -104,13 +126,15 @@ void QueueRoundMvpSelectionRetry(float delay, int attempt)
         return;
     }
 
-    g_hRoundMvpTimer = CreateTimer(delay, Timer_SetRoundMvps, attempt, TIMER_FLAG_NO_MAPCHANGE);
+    g_hRoundMvpTimer = CreateTimer(0.25, Timer_SetRoundMvps, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-bool GetRoundMvpCandidatePoints(int client, int &points, bool &waitingForData)
+bool GetRoundMvpCandidateCache(int client, int &rank, int &points, bool &needsRefresh, bool &waitingForClientCache)
 {
+    rank = 0;
     points = 0;
-    waitingForData = false;
+    needsRefresh = false;
+    waitingForClientCache = false;
 
     if (!IsClientInGame(client) || IsFakeClient(client))
     {
@@ -121,22 +145,57 @@ bool GetRoundMvpCandidatePoints(int client, int &points, bool &waitingForData)
     if (g_Stats[client].steamId[0] == '\0')
     {
         RequestClientStateLoads(client);
-        waitingForData = true;
+        waitingForClientCache = true;
         return false;
     }
 
-    if (!g_Stats[client].loaded || g_bStatsLoadPending[client])
+    if (HasSteamIdBeenMapMvp(g_Stats[client].steamId))
     {
-        RequestClientStateLoads(client);
-        waitingForData = true;
         return false;
     }
 
-    points = GetWhalePointsForStats(g_Stats[client]);
+    if (!IsClientPointsCacheFresh(client, 60))
+    {
+        RequestClientPointsCacheQuery(client);
+        if (IsWhalePointsCacheGloballyFresh(60))
+        {
+            if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Missing)
+            {
+                return false;
+            }
+
+            waitingForClientCache = true;
+        }
+        else
+        {
+            needsRefresh = true;
+        }
+        return false;
+    }
+
+    int cachedRank = 0;
+    int cachedPoints = 0;
+    char cachedName[128];
+    char cachedColor[32];
+    char cachedPrename[64];
+    if (!GetCachedWhalePointsForClient(client, cachedPoints, cachedRank, cachedName, sizeof(cachedName), cachedColor, sizeof(cachedColor), cachedPrename, sizeof(cachedPrename)))
+    {
+        RequestClientPointsCacheQuery(client);
+        needsRefresh = true;
+        return false;
+    }
+
+    if (cachedRank < 1)
+    {
+        return false;
+    }
+
+    rank = cachedRank;
+    points = cachedPoints;
     return true;
 }
 
-bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBest, int currentBestPoints)
+bool IsBetterRoundMvpCandidate(int candidate, int candidateRank, int candidatePoints, int currentBest, int currentBestRank, int currentBestPoints)
 {
     if (candidate <= 0)
     {
@@ -146,6 +205,16 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBe
     if (currentBest <= 0)
     {
         return true;
+    }
+
+    if (candidateRank < currentBestRank)
+    {
+        return true;
+    }
+
+    if (candidateRank > currentBestRank)
+    {
+        return false;
     }
 
     if (candidatePoints > currentBestPoints)
@@ -175,11 +244,13 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBe
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
+    PromoteCurrentRoundMvpsToHistory();
     SnapshotCurrentRoundMvpStateToLastRound();
     ClearCurrentRoundMvpState();
+    g_bRoundMvpSelectionAfterRefresh = false;
     g_hRoundMvpTimer = null;
 
-    QueueRoundMvpSelectionRetry(1.0, 0);
+    QueueRoundMvpSelection();
 }
 
 public Action Timer_SetRoundMvps(Handle timer, any data)
@@ -191,14 +262,16 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
 
     g_hRoundMvpTimer = null;
 
-    int attempt = data;
     bool needRed = (g_sRoundMvpSteamId[2][0] == '\0');
     bool needBlue = (g_sRoundMvpSteamId[3][0] == '\0');
     int redMvp = 0;
     int blueMvp = 0;
+    int bestRedRank = 0;
+    int bestBlueRank = 0;
     int bestRedPoints = 0;
     int bestBluePoints = 0;
-    bool waitingForData = false;
+    bool needsRefresh = false;
+    bool waitingForClientCache = false;
 
     if (!needRed && !needBlue)
     {
@@ -218,43 +291,47 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
             continue;
         }
 
-        EnsureClientSteamId(i);
-        if (g_Stats[i].steamId[0] == '\0')
-        {
-            RequestClientStateLoads(i);
-            waitingForData = true;
-            continue;
-        }
-
+        int rank = 0;
         int points = 0;
-        bool clientWaiting = false;
-        if (!GetRoundMvpCandidatePoints(i, points, clientWaiting))
+        bool clientNeedsRefresh = false;
+        bool clientWaitingForCache = false;
+        if (!GetRoundMvpCandidateCache(i, rank, points, clientNeedsRefresh, clientWaitingForCache))
         {
-            waitingForData |= clientWaiting;
+            needsRefresh |= clientNeedsRefresh;
+            waitingForClientCache |= clientWaitingForCache;
             continue;
         }
 
-        waitingForData |= clientWaiting;
-
-        if (needRed && team == 2 && IsBetterRoundMvpCandidate(i, points, redMvp, bestRedPoints))
+        if (needRed && team == 2 && IsBetterRoundMvpCandidate(i, rank, points, redMvp, bestRedRank, bestRedPoints))
         {
             redMvp = i;
+            bestRedRank = rank;
             bestRedPoints = points;
             continue;
         }
 
-        if (needBlue && team == 3 && IsBetterRoundMvpCandidate(i, points, blueMvp, bestBluePoints))
+        if (needBlue && team == 3 && IsBetterRoundMvpCandidate(i, rank, points, blueMvp, bestBlueRank, bestBluePoints))
         {
             blueMvp = i;
+            bestBlueRank = rank;
             bestBluePoints = points;
         }
     }
 
-    if (((needRed && redMvp == 0) || (needBlue && blueMvp == 0)) && waitingForData && attempt < 12)
+    if ((needRed || needBlue) && needsRefresh)
     {
-        QueueRoundMvpSelectionRetry(1.0, attempt + 1);
+        g_bRoundMvpSelectionAfterRefresh = true;
+        RequestWhalePointsCacheRefresh();
         return Plugin_Stop;
     }
+
+    if ((needRed || needBlue) && waitingForClientCache)
+    {
+        g_bRoundMvpSelectionAfterRefresh = true;
+        return Plugin_Stop;
+    }
+
+    g_bRoundMvpSelectionAfterRefresh = false;
 
     if (needRed && redMvp > 0)
     {
@@ -283,6 +360,7 @@ public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
     }
 
     RefreshClientRoundMvpFlag(client);
+    QueueRoundMvpSelection();
 }
 
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)

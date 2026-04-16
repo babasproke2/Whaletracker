@@ -31,7 +31,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     g_hDatabase = db;
     g_bDatabaseReady = true;
     ResetPointsCacheRefreshState();
-    EnsurePointsCacheRefreshTimers();
+    SchedulePointsCacheWarmup(1.0);
 
     if (!g_hDatabase.SetCharset("utf8mb4"))
     {
@@ -493,6 +493,8 @@ public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results
     }
 
     g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "CREATE TABLE IF NOT EXISTS whaletracker_points_cache_build LIKE whaletracker_points_cache");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS name_color VARCHAR(32) DEFAULT ''");
     g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS name VARCHAR(128) DEFAULT ''");
@@ -500,8 +502,18 @@ public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS prename VARCHAR(64) DEFAULT ''");
     g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS rank INTEGER DEFAULT 0");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS name_color VARCHAR(32) DEFAULT ''");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS name VARCHAR(128) DEFAULT ''");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS prename VARCHAR(64) DEFAULT ''");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS rank INTEGER DEFAULT 0");
+    g_hDatabase.Query(WhaleTracker_AlterCallback,
+        "ALTER TABLE whaletracker_points_cache_build CONVERT TO CHARACTER SET utf8mb4");
 
-    RefreshWhalePointsCacheAll();
+    SchedulePointsCacheWarmup(1.0);
 }
 
 public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const char[] error, any data)
@@ -606,6 +618,10 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to load stats for %N: %s", index, error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
         WhaleTracker_RefreshClientTrackingState(index);
         return;
     }
@@ -645,7 +661,10 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
 
     TouchClientLastSeen(index);
     WhaleTracker_RefreshClientTrackingState(index);
-    QueueRoundMvpSelectionRetry(0.25, 0);
+    if (g_bRoundMvpSelectionAfterRefresh && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
+    {
+        QueueRoundMvpSelection();
+    }
 }
 
 public void WhaleTracker_LoadOnlineSnapshotCallback(Database db, DBResultSet results, const char[] error, any data)
@@ -661,6 +680,10 @@ public void WhaleTracker_LoadOnlineSnapshotCallback(Database db, DBResultSet res
     if (error[0] != '\0')
     {
         LogError("[WhaleTracker] Failed to restore online snapshot for %N: %s", client, error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
         g_MapStats[client].loaded = true;
         g_MapStats[client].connectTime = GetEngineTime();
         TouchClientLastSeen(client);

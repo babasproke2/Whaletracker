@@ -10,7 +10,7 @@ public Plugin myinfo =
 void ResetPointsCacheRefreshState(bool resetClientPending = true)
 {
     g_bPointsCacheRefreshInFlight = false;
-    g_flPointsCacheRefreshStartedAt = 0.0;
+    g_bPointsCacheRefreshQueued = false;
     g_iPointsCacheRefreshSerial++;
 
     if (!resetClientPending)
@@ -27,31 +27,41 @@ void ResetPointsCacheRefreshState(bool resetClientPending = true)
     }
 }
 
-bool RecoverStalePointsCacheRefreshState(float maxAge = 180.0)
+void SchedulePointsCacheWarmup(float delay = 5.0)
 {
-    if (!g_bPointsCacheRefreshInFlight)
-    {
-        return false;
-    }
-
-    if (g_flPointsCacheRefreshStartedAt > 0.0 && (GetTickedTime() - g_flPointsCacheRefreshStartedAt) < maxAge)
-    {
-        return false;
-    }
-
-    LogError("[WhaleTracker] Resetting stale points cache refresh state.");
-    ResetPointsCacheRefreshState();
-    return true;
-}
-
-void EnsurePointsCacheRefreshTimers()
-{
-    if (g_hPointsCacheRefreshRepeatTimer != null)
+    if (g_hPointsCacheWarmupTimer != null)
     {
         return;
     }
 
-    g_hPointsCacheRefreshRepeatTimer = CreateTimer(60.0, Timer_RefreshWhalePointsCacheRolling, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+    g_hPointsCacheWarmupTimer = CreateTimer(delay, Timer_WarmupPointsCache, _, TIMER_FLAG_NO_MAPCHANGE);
+}
+
+public Action Timer_WarmupPointsCache(Handle timer, any data)
+{
+    if (timer == g_hPointsCacheWarmupTimer)
+    {
+        g_hPointsCacheWarmupTimer = null;
+    }
+
+    RequestWhalePointsCacheRefresh();
+    return Plugin_Stop;
+}
+
+public void RequestWhalePointsCacheRefresh()
+{
+    if (!g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    if (g_bPointsCacheRefreshInFlight)
+    {
+        g_bPointsCacheRefreshQueued = true;
+        return;
+    }
+
+    RefreshWhalePointsCacheAll();
 }
 
 public void OnPluginStart()
@@ -61,6 +71,14 @@ public void OnPluginStart()
         delete g_SaveQueue;
     }
     g_SaveQueue = new ArrayList();
+    if (g_MapMvpHistory == null)
+    {
+        g_MapMvpHistory = new StringMap();
+    }
+    else
+    {
+        g_MapMvpHistory.Clear();
+    }
     g_PendingSaveQueries = 0;
     g_bShuttingDown = false;
     g_hReconnectTimer = null;
@@ -164,7 +182,6 @@ public void OnPluginStart()
         CloseHandle(g_hPeriodicSaveTimer);
     }
     g_hPeriodicSaveTimer = CreateTimer(30.0, Timer_GlobalSave, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-    EnsurePointsCacheRefreshTimers();
 
     g_hAirshotForward = CreateGlobalForward("WhaleTracker_OnAirshot", ET_Ignore, Param_Cell, Param_Cell);
 
@@ -198,10 +215,15 @@ public void OnMapStart()
     RefreshHostAddress();
     ClearOnlineStats();
     ResetPointsCacheRefreshState(false);
-    EnsurePointsCacheRefreshTimers();
+    g_hPointsCacheWarmupTimer = null;
+    SchedulePointsCacheWarmup();
     g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
+    if (g_MapMvpHistory != null)
+    {
+        g_MapMvpHistory.Clear();
+    }
     for (int i = 1; i <= MaxClients; i++)
     {
         ResetMapStats(i);
@@ -212,18 +234,17 @@ public void OnMapStart()
         }
         g_KillSaveCounter[i] = 0;
     }
-
-    RefreshWhalePointsCacheAll();
 }
 
 public void OnMapEnd()
 {
-    if (g_hPointsCacheRefreshRepeatTimer != null)
+    if (g_hPointsCacheWarmupTimer != null)
     {
-        CloseHandle(g_hPointsCacheRefreshRepeatTimer);
-        g_hPointsCacheRefreshRepeatTimer = null;
+        CloseHandle(g_hPointsCacheWarmupTimer);
+        g_hPointsCacheWarmupTimer = null;
     }
 
+    ResetPointsCacheRefreshState(false);
     g_hRoundMvpTimer = null;
 
     for (int i = 1; i <= MaxClients; i++)
@@ -237,19 +258,6 @@ public void OnMapEnd()
     FlushSaveQueueSync();
     FinalizeCurrentMatch(false);
     WhaleTracker_RustFlushSqlBatch();
-}
-
-public Action Timer_RefreshWhalePointsCacheRolling(Handle timer, any data)
-{
-    RecoverStalePointsCacheRefreshState();
-
-    if (!g_bDatabaseReady || g_hDatabase == null)
-    {
-        return Plugin_Continue;
-    }
-
-    RefreshWhalePointsCacheAll();
-    return Plugin_Continue;
 }
 
 public void OnPluginEnd()
@@ -331,7 +339,7 @@ public void OnPluginEnd()
     // invalid by the time OnPluginEnd runs.
     g_hOnlineTimer = null;
     g_hPeriodicSaveTimer = null;
-    g_hPointsCacheRefreshRepeatTimer = null;
+    g_hPointsCacheWarmupTimer = null;
     g_hRoundMvpTimer = null;
     g_hReconnectTimer = null;
     g_hSavePumpTimer = null;
@@ -346,6 +354,12 @@ public void OnPluginEnd()
     {
         delete g_SaveQueue;
         g_SaveQueue = null;
+    }
+
+    if (g_MapMvpHistory != null)
+    {
+        delete g_MapMvpHistory;
+        g_MapMvpHistory = null;
     }
 
     g_hDatabase = null;
@@ -529,7 +543,7 @@ void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+        "SELECT points, rank, updated_at, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
     g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, pack);
 }
@@ -552,6 +566,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Error;
         g_iClientCachedPoints[client] = 0;
         g_iClientCachedRank[client] = 0;
+        g_iClientCachedUpdatedAt[client] = 0;
         g_sClientCachedColor[client][0] = '\0';
         g_sClientCachedName[client][0] = '\0';
         g_sClientCachedPrename[client][0] = '\0';
@@ -560,10 +575,13 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         {
             WhaleTracker_ScheduleReconnect(2.0);
         }
+        TryFlushPendingPointsRepliesForTarget(client);
+        return;
     }
 
     int points = 0;
     int rank = 0;
+    int updatedAt = 0;
     char colorTag[32];
     char cachedName[128];
     char cachedPrename[128];
@@ -576,6 +594,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Ready;
         points = results.FetchInt(0);
         rank = results.FetchInt(1);
+        updatedAt = results.FetchInt(2);
         if (points < 0)
         {
             points = 0;
@@ -585,9 +604,9 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
             rank = 0;
         }
 
-        results.FetchString(2, colorTag, sizeof(colorTag));
-        results.FetchString(3, cachedName, sizeof(cachedName));
-        results.FetchString(4, cachedPrename, sizeof(cachedPrename));
+        results.FetchString(3, colorTag, sizeof(colorTag));
+        results.FetchString(4, cachedName, sizeof(cachedName));
+        results.FetchString(5, cachedPrename, sizeof(cachedPrename));
         TrimString(colorTag);
         TrimString(cachedName);
         TrimString(cachedPrename);
@@ -599,9 +618,15 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
 
     g_iClientCachedPoints[client] = points;
     g_iClientCachedRank[client] = rank;
+    g_iClientCachedUpdatedAt[client] = updatedAt;
     strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
     strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
     strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
+    TryFlushPendingPointsRepliesForTarget(client);
+    if (g_bRoundMvpSelectionAfterRefresh && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
+    {
+        QueueRoundMvpSelection();
+    }
 
     if (!announceJoin)
     {
