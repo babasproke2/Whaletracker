@@ -91,9 +91,18 @@ enum WeaponCategory
 }
 #define WEAPON_CATEGORY_COUNT 8
 
+enum ClientPointsCacheState
+{
+    ClientPointsCacheState_Unknown = 0,
+    ClientPointsCacheState_Pending,
+    ClientPointsCacheState_Ready,
+    ClientPointsCacheState_Missing,
+    ClientPointsCacheState_Error
+}
+
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
-forward void RequestClientStateLoads(int client);
-forward int GetWhalePointsForClient(int client);
+void RequestClientStateLoads(int client);
+int GetWhalePointsForClient(int client);
 
 enum struct WhaleStats
 {
@@ -233,8 +242,7 @@ bool g_bPointsCacheRefreshInFlight = false;
 int g_iPointsCacheRefreshSerial = 0;
 float g_flPointsCacheRefreshStartedAt = 0.0;
 
-bool g_bClientPointsCacheLoaded[MAXPLAYERS + 1];
-bool g_bClientPointsCachePending[MAXPLAYERS + 1];
+ClientPointsCacheState g_eClientPointsCacheState[MAXPLAYERS + 1];
 int g_iClientCachedPoints[MAXPLAYERS + 1];
 int g_iClientCachedRank[MAXPLAYERS + 1];
 char g_sClientCachedName[MAXPLAYERS + 1][128];
@@ -243,7 +251,6 @@ char g_sClientCachedPrename[MAXPLAYERS + 1][64];
 bool g_bRoundMvp[MAXPLAYERS + 1];
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
-StringMap g_hMapMvpSteamIds = null;
 Handle g_hRoundMvpTimer = null;
 
 bool g_bFavoriteClassLoaded[MAXPLAYERS + 1];

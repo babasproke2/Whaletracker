@@ -235,7 +235,7 @@ public Action Command_ShowMvps(int client, int args)
     int currentRed = FindConnectedClientBySteamId(g_sRoundMvpSteamId[2]);
     int currentBlue = FindConnectedClientBySteamId(g_sRoundMvpSteamId[3]);
 
-    bool missingCurrentMvp = (currentRed <= 0 || currentBlue <= 0);
+    bool missingCurrentMvp = (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0');
 
     if (missingCurrentMvp)
     {
@@ -722,8 +722,7 @@ void ResetClientCommandCaches(int client)
         return;
     }
 
-    g_bClientPointsCacheLoaded[client] = false;
-    g_bClientPointsCachePending[client] = false;
+    g_eClientPointsCacheState[client] = ClientPointsCacheState_Unknown;
     g_iClientCachedPoints[client] = 0;
     g_iClientCachedRank[client] = 0;
     g_sClientCachedName[client][0] = '\0';
@@ -1178,7 +1177,7 @@ bool GetCachedWhalePointsForClient(int client, int &points, int &rank, char[] pl
     colorTag[0] = '\0';
     prename[0] = '\0';
 
-    if (client <= 0 || client > MaxClients || !IsClientConnected(client) || !g_bClientPointsCacheLoaded[client])
+    if (client <= 0 || client > MaxClients || !IsClientConnected(client) || g_eClientPointsCacheState[client] != ClientPointsCacheState_Ready)
     {
         return false;
     }
@@ -1356,7 +1355,7 @@ public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResul
         RequestClientPointsCacheQuery(i);
     }
 
-    QueueRoundMvpSelectionRetry();
+    QueueRoundMvpSelectionRetry(0.25, 0);
     PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table.");
 }
 
@@ -1396,7 +1395,7 @@ void GetClientFiltersNameColorTag(int client, char[] colorTag, int maxlen)
         return;
     }
 
-    if (g_bClientPointsCacheLoaded[client] && g_sClientCachedColor[client][0] != '\0')
+    if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Ready && g_sClientCachedColor[client][0] != '\0')
     {
         strcopy(colorTag, maxlen, g_sClientCachedColor[client]);
     }

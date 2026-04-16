@@ -645,6 +645,7 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
 
     TouchClientLastSeen(index);
     WhaleTracker_RefreshClientTrackingState(index);
+    QueueRoundMvpSelectionRetry(0.25, 0);
 }
 
 public void WhaleTracker_LoadOnlineSnapshotCallback(Database db, DBResultSet results, const char[] error, any data)

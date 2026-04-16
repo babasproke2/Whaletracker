@@ -20,7 +20,10 @@ void ResetPointsCacheRefreshState(bool resetClientPending = true)
 
     for (int i = 1; i <= MaxClients; i++)
     {
-        g_bClientPointsCachePending[i] = false;
+        if (g_eClientPointsCacheState[i] == ClientPointsCacheState_Pending)
+        {
+            g_eClientPointsCacheState[i] = ClientPointsCacheState_Unknown;
+        }
     }
 }
 
@@ -147,7 +150,6 @@ public void OnPluginStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     RefreshServerFlags();
-    ResetMapMvpHistory();
     WhaleTracker_RustInit();
 
     WhaleTracker_SQLConnect();
@@ -200,7 +202,6 @@ public void OnMapStart()
     g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
-    ResetMapMvpHistory();
     for (int i = 1; i <= MaxClients; i++)
     {
         ResetMapStats(i);
@@ -345,12 +346,6 @@ public void OnPluginEnd()
     {
         delete g_SaveQueue;
         g_SaveQueue = null;
-    }
-
-    if (g_hMapMvpSteamIds != null)
-    {
-        delete g_hMapMvpSteamIds;
-        g_hMapMvpSteamIds = null;
     }
 
     g_hDatabase = null;
@@ -519,11 +514,11 @@ void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
         return;
     }
 
-    if (g_bClientPointsCachePending[client])
+    if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Pending)
     {
         return;
     }
-    g_bClientPointsCachePending[client] = true;
+    g_eClientPointsCacheState[client] = ClientPointsCacheState_Pending;
 
     char escapedSteamId[STEAMID64_LEN * 2];
     EscapeSqlString(g_Stats[client].steamId, escapedSteamId, sizeof(escapedSteamId));
@@ -552,10 +547,14 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         return;
     }
 
-    g_bClientPointsCachePending[client] = false;
-
     if (error[0] != '\0')
     {
+        g_eClientPointsCacheState[client] = ClientPointsCacheState_Error;
+        g_iClientCachedPoints[client] = 0;
+        g_iClientCachedRank[client] = 0;
+        g_sClientCachedColor[client][0] = '\0';
+        g_sClientCachedName[client][0] = '\0';
+        g_sClientCachedPrename[client][0] = '\0';
         LogError("[WhaleTracker] Failed to query points cache for join message: %s", error);
         if (WhaleTracker_IsConnectionLostError(error))
         {
@@ -574,6 +573,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
 
     if (results != null && results.FetchRow())
     {
+        g_eClientPointsCacheState[client] = ClientPointsCacheState_Ready;
         points = results.FetchInt(0);
         rank = results.FetchInt(1);
         if (points < 0)
@@ -592,15 +592,16 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         TrimString(cachedName);
         TrimString(cachedPrename);
     }
+    else
+    {
+        g_eClientPointsCacheState[client] = ClientPointsCacheState_Missing;
+    }
 
-    g_bClientPointsCacheLoaded[client] = true;
     g_iClientCachedPoints[client] = points;
     g_iClientCachedRank[client] = rank;
     strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
     strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
     strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
-
-    QueueRoundMvpSelectionRetry();
 
     if (!announceJoin)
     {

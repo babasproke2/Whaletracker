@@ -38,42 +38,6 @@ void SnapshotCurrentRoundMvpStateToLastRound()
     strcopy(g_sLastRoundMvpSteamId[3], sizeof(g_sLastRoundMvpSteamId[]), g_sRoundMvpSteamId[3]);
 }
 
-void ResetMapMvpHistory()
-{
-    if (g_hMapMvpSteamIds != null)
-    {
-        delete g_hMapMvpSteamIds;
-    }
-
-    g_hMapMvpSteamIds = new StringMap();
-}
-
-bool HasSteamIdBeenMapMvp(const char[] steamId)
-{
-    if (steamId[0] == '\0' || g_hMapMvpSteamIds == null)
-    {
-        return false;
-    }
-
-    int value = 0;
-    return g_hMapMvpSteamIds.GetValue(steamId, value);
-}
-
-void MarkSteamIdAsMapMvp(const char[] steamId)
-{
-    if (steamId[0] == '\0')
-    {
-        return;
-    }
-
-    if (g_hMapMvpSteamIds == null)
-    {
-        g_hMapMvpSteamIds = new StringMap();
-    }
-
-    g_hMapMvpSteamIds.SetValue(steamId, 1, true);
-}
-
 bool IsClientCurrentRoundMvp(int client)
 {
     if (!IsValidClient(client) || IsFakeClient(client))
@@ -120,11 +84,10 @@ void AssignRoundMvp(int client, int team)
     }
 
     strcopy(g_sRoundMvpSteamId[team], sizeof(g_sRoundMvpSteamId[]), g_Stats[client].steamId);
-    MarkSteamIdAsMapMvp(g_Stats[client].steamId);
     RefreshClientRoundMvpFlag(client);
 }
 
-void QueueRoundMvpSelectionRetry(float delay = 0.25, int attempt = 0)
+void QueueRoundMvpSelectionRetry(float delay, int attempt)
 {
     if (!WhaleTracker_IsRoundRunning())
     {
@@ -162,30 +125,15 @@ bool GetRoundMvpCandidatePoints(int client, int &points, bool &waitingForData)
         return false;
     }
 
-    if (g_bClientPointsCacheLoaded[client] && g_iClientCachedRank[client] > 0 && g_iClientCachedPoints[client] > 0)
-    {
-        points = g_iClientCachedPoints[client];
-        return true;
-    }
-
-    points = GetWhalePointsForClient(client);
-    if (points > 0)
-    {
-        return true;
-    }
-
     if (!g_Stats[client].loaded || g_bStatsLoadPending[client])
     {
         RequestClientStateLoads(client);
         waitingForData = true;
+        return false;
     }
 
-    if (!g_bClientPointsCachePending[client])
-    {
-        RequestClientPointsCacheQuery(client);
-    }
-
-    return false;
+    points = GetWhalePointsForStats(g_Stats[client]);
+    return true;
 }
 
 bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBest, int currentBestPoints)
@@ -244,13 +192,18 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
     g_hRoundMvpTimer = null;
 
     int attempt = data;
+    bool needRed = (g_sRoundMvpSteamId[2][0] == '\0');
+    bool needBlue = (g_sRoundMvpSteamId[3][0] == '\0');
     int redMvp = 0;
     int blueMvp = 0;
     int bestRedPoints = 0;
     int bestBluePoints = 0;
     bool waitingForData = false;
 
-    ClearCurrentRoundMvpState();
+    if (!needRed && !needBlue)
+    {
+        return Plugin_Stop;
+    }
 
     for (int i = 1; i <= MaxClients; i++)
     {
@@ -273,11 +226,6 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
             continue;
         }
 
-        if (HasSteamIdBeenMapMvp(g_Stats[i].steamId))
-        {
-            continue;
-        }
-
         int points = 0;
         bool clientWaiting = false;
         if (!GetRoundMvpCandidatePoints(i, points, clientWaiting))
@@ -288,32 +236,32 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
 
         waitingForData |= clientWaiting;
 
-        if (team == 2 && IsBetterRoundMvpCandidate(i, points, redMvp, bestRedPoints))
+        if (needRed && team == 2 && IsBetterRoundMvpCandidate(i, points, redMvp, bestRedPoints))
         {
             redMvp = i;
             bestRedPoints = points;
             continue;
         }
 
-        if (team == 3 && IsBetterRoundMvpCandidate(i, points, blueMvp, bestBluePoints))
+        if (needBlue && team == 3 && IsBetterRoundMvpCandidate(i, points, blueMvp, bestBluePoints))
         {
             blueMvp = i;
             bestBluePoints = points;
         }
     }
 
-    if ((redMvp == 0 || blueMvp == 0) && waitingForData && attempt < 12)
+    if (((needRed && redMvp == 0) || (needBlue && blueMvp == 0)) && waitingForData && attempt < 12)
     {
         QueueRoundMvpSelectionRetry(1.0, attempt + 1);
         return Plugin_Stop;
     }
 
-    if (redMvp > 0)
+    if (needRed && redMvp > 0)
     {
         AssignRoundMvp(redMvp, 2);
     }
 
-    if (blueMvp > 0)
+    if (needBlue && blueMvp > 0)
     {
         AssignRoundMvp(blueMvp, 3);
     }
