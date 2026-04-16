@@ -360,7 +360,10 @@ public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
     }
 
     RefreshClientRoundMvpFlag(client);
-    QueueRoundMvpSelection();
+    if (WhaleTracker_IsRoundRunning())
+    {
+        QueueRoundMvpSelection();
+    }
 }
 
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)

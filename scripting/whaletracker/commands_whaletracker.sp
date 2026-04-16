@@ -336,7 +336,7 @@ public Action Command_ShowMvps(int client, int args)
 
     bool missingCurrentMvp = (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0');
 
-    if (missingCurrentMvp)
+    if (missingCurrentMvp && WhaleTracker_IsRoundRunning())
     {
         g_bRoundMvpSelectionAfterRefresh = true;
         QueueRoundMvpSelection();
