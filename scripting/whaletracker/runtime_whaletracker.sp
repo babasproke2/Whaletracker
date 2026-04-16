@@ -454,12 +454,18 @@ public void OnClientDisconnect(int client)
     SaveClientStats(client, true, true);
     CacheWhalePointsOnDisconnect(client);
     RemoveOnlineStats(client);
+    bool clearedRoundMvp = InvalidateClientRoundMvp(client);
     ResetAllStats(client);
     ResetClientCommandCaches(client);
     g_bRoundMvp[client] = false;
     g_KillSaveCounter[client] = 0;
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
+
+    if (clearedRoundMvp && WhaleTracker_IsRoundRunning())
+    {
+        QueueRoundMvpSelection();
+    }
 }
 
 public void OnClientAuthorized(int client, const char[] auth)

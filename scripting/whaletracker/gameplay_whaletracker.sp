@@ -38,6 +38,66 @@ void SnapshotCurrentRoundMvpStateToLastRound()
     strcopy(g_sLastRoundMvpSteamId[3], sizeof(g_sLastRoundMvpSteamId[]), g_sRoundMvpSteamId[3]);
 }
 
+void ClearRoundMvpForTeam(int team)
+{
+    if (team != 2 && team != 3)
+    {
+        return;
+    }
+
+    g_sRoundMvpSteamId[team][0] = '\0';
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        RefreshClientRoundMvpFlag(i);
+    }
+}
+
+bool InvalidateClientRoundMvp(int client, int team = 0)
+{
+    if (client <= 0 || client > MaxClients || IsFakeClient(client))
+    {
+        return false;
+    }
+
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
+    {
+        return false;
+    }
+
+    bool cleared = false;
+    if (team == 2 || team == 3)
+    {
+        if (StrEqual(g_sRoundMvpSteamId[team], g_Stats[client].steamId, false))
+        {
+            ClearRoundMvpForTeam(team);
+            cleared = true;
+        }
+
+        return cleared;
+    }
+
+    if (StrEqual(g_sRoundMvpSteamId[2], g_Stats[client].steamId, false))
+    {
+        ClearRoundMvpForTeam(2);
+        cleared = true;
+    }
+
+    if (StrEqual(g_sRoundMvpSteamId[3], g_Stats[client].steamId, false))
+    {
+        ClearRoundMvpForTeam(3);
+        cleared = true;
+    }
+
+    return cleared;
+}
+
 bool IsClientCurrentRoundMvp(int client)
 {
     if (!IsValidClient(client) || IsFakeClient(client))
@@ -83,7 +143,9 @@ void AssignRoundMvp(int client, int team)
         return;
     }
 
+    ClearRoundMvpForTeam(team);
     strcopy(g_sRoundMvpSteamId[team], sizeof(g_sRoundMvpSteamId[]), g_Stats[client].steamId);
+    MarkSteamIdAsMapMvp(g_Stats[client].steamId);
     RefreshClientRoundMvpFlag(client);
 }
 
@@ -108,14 +170,13 @@ void MarkSteamIdAsMapMvp(const char[] steamId)
     g_MapMvpHistory.SetValue(steamId, 1, true);
 }
 
-void PromoteCurrentRoundMvpsToHistory()
-{
-    MarkSteamIdAsMapMvp(g_sRoundMvpSteamId[2]);
-    MarkSteamIdAsMapMvp(g_sRoundMvpSteamId[3]);
-}
-
 public void QueueRoundMvpSelection()
 {
+    if (!WhaleTracker_IsRoundRunning())
+    {
+        return;
+    }
+
     if (g_hRoundMvpTimer != null)
     {
         return;
@@ -244,7 +305,6 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidateRank, int candidatePo
 
 public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
-    PromoteCurrentRoundMvpsToHistory();
     SnapshotCurrentRoundMvpStateToLastRound();
     ClearCurrentRoundMvpState();
     g_bRoundMvpSelectionAfterRefresh = false;
@@ -359,8 +419,11 @@ public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
         return;
     }
 
+    int oldTeam = event.GetInt("oldteam");
+    int newTeam = event.GetInt("team");
+    bool cleared = InvalidateClientRoundMvp(client, oldTeam);
     RefreshClientRoundMvpFlag(client);
-    if (WhaleTracker_IsRoundRunning())
+    if (WhaleTracker_IsRoundRunning() && (cleared || oldTeam != newTeam))
     {
         QueueRoundMvpSelection();
     }
