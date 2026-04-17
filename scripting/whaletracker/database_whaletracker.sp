@@ -31,7 +31,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     g_hDatabase = db;
     g_bDatabaseReady = true;
     ResetPointsCacheRefreshState();
-    SchedulePointsCacheWarmup(1.0);
+    SchedulePointsCacheWarmupWithReason(1.0, "db_connect");
 
     if (!g_hDatabase.SetCharset("utf8mb4"))
     {
@@ -513,7 +513,7 @@ public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results
     g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache_build CONVERT TO CHARACTER SET utf8mb4");
 
-    SchedulePointsCacheWarmup(1.0);
+    SchedulePointsCacheWarmupWithReason(1.0, "points_cache_table_ready");
 }
 
 public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const char[] error, any data)

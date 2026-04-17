@@ -7,11 +7,55 @@ public Plugin myinfo =
     url = "https://kogasa.tf"
 };
 
+void ReleasePointsCacheRefreshLockOnDatabase(Database db = null)
+{
+    if (!g_bPointsCacheRefreshLockHeld)
+    {
+        return;
+    }
+
+    Database releaseDb = db;
+    if (releaseDb == null)
+    {
+        releaseDb = g_hDatabase;
+    }
+
+    g_bPointsCacheRefreshLockHeld = false;
+    g_iPointsCacheRefreshLockSerial = 0;
+
+    if (releaseDb == null)
+    {
+        return;
+    }
+
+    char query[96];
+    Format(query, sizeof(query), "DO RELEASE_LOCK('%s')", WHALE_POINTS_CACHE_DB_LOCK);
+    SQL_FastQuery(releaseDb, query);
+}
+
+void ReleasePointsCacheRefreshLockForSerial(Database db, int refreshSerial)
+{
+    if (!g_bPointsCacheRefreshLockHeld || g_iPointsCacheRefreshLockSerial != refreshSerial)
+    {
+        return;
+    }
+
+    ReleasePointsCacheRefreshLockOnDatabase(db);
+}
+
 void ResetPointsCacheRefreshState(bool resetClientPending = true)
 {
+    ReleasePointsCacheRefreshLockOnDatabase();
     g_bPointsCacheRefreshInFlight = false;
     g_bPointsCacheRefreshQueued = false;
     g_iPointsCacheRefreshSerial++;
+    g_iPointsCacheRefreshLockSerial = 0;
+    g_sPointsCacheRefreshReason[0] = '\0';
+    g_sQueuedPointsCacheRefreshReason[0] = '\0';
+    if (g_hPointsCacheWarmupTimer == null)
+    {
+        g_sPointsCacheWarmupReason[0] = '\0';
+    }
 
     if (!resetClientPending)
     {
@@ -27,40 +71,89 @@ void ResetPointsCacheRefreshState(bool resetClientPending = true)
     }
 }
 
-void SchedulePointsCacheWarmup(float delay = 5.0)
+void SchedulePointsCacheWarmupWithReason(float delay, const char[] reason)
 {
+    char effectiveReason[128];
+    strcopy(effectiveReason, sizeof(effectiveReason), reason[0] ? reason : "unspecified");
+
     if (g_hPointsCacheWarmupTimer != null)
     {
+        PrintToServer("[WhaleTracker] Points cache warmup already scheduled; pending_reason=%s new_reason=%s delay=%.2f",
+            g_sPointsCacheWarmupReason[0] ? g_sPointsCacheWarmupReason : "unspecified",
+            effectiveReason,
+            delay);
         return;
     }
 
+    strcopy(g_sPointsCacheWarmupReason, sizeof(g_sPointsCacheWarmupReason), effectiveReason);
+    PrintToServer("[WhaleTracker] Points cache warmup scheduled reason=%s delay=%.2f players=%d round=%d",
+        effectiveReason,
+        delay,
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
     g_hPointsCacheWarmupTimer = CreateTimer(delay, Timer_WarmupPointsCache, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action Timer_WarmupPointsCache(Handle timer, any data)
 {
+    char reason[128];
+    strcopy(reason, sizeof(reason), g_sPointsCacheWarmupReason[0] ? g_sPointsCacheWarmupReason : "unspecified");
+
     if (timer == g_hPointsCacheWarmupTimer)
     {
         g_hPointsCacheWarmupTimer = null;
     }
+    g_sPointsCacheWarmupReason[0] = '\0';
 
-    RequestWhalePointsCacheRefresh();
+    PrintToServer("[WhaleTracker] Points cache warmup fired reason=%s players=%d round=%d",
+        reason,
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
+    RequestWhalePointsCacheRefreshWithReason(reason);
     return Plugin_Stop;
 }
 
 public void RequestWhalePointsCacheRefresh()
 {
+    RequestWhalePointsCacheRefreshWithReason("legacy");
+}
+
+public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
+{
+    char effectiveReason[128];
+    strcopy(effectiveReason, sizeof(effectiveReason), reason[0] ? reason : "unspecified");
+    int age = (g_iPointsCacheLastBuiltAt > 0) ? (GetTime() - g_iPointsCacheLastBuiltAt) : -1;
+
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
+        PrintToServer("[WhaleTracker] Points cache refresh dropped reason=%s db_ready=0 age=%d players=%d round=%d",
+            effectiveReason,
+            age,
+            GetClientCount(false),
+            WhaleTracker_IsRoundRunning() ? 1 : 0);
         return;
     }
 
     if (g_bPointsCacheRefreshInFlight)
     {
         g_bPointsCacheRefreshQueued = true;
+        strcopy(g_sQueuedPointsCacheRefreshReason, sizeof(g_sQueuedPointsCacheRefreshReason), effectiveReason);
+        PrintToServer("[WhaleTracker] Points cache refresh queued reason=%s active_reason=%s age=%d players=%d round=%d",
+            effectiveReason,
+            g_sPointsCacheRefreshReason[0] ? g_sPointsCacheRefreshReason : "unknown",
+            age,
+            GetClientCount(false),
+            WhaleTracker_IsRoundRunning() ? 1 : 0);
         return;
     }
 
+    strcopy(g_sPointsCacheRefreshReason, sizeof(g_sPointsCacheRefreshReason), effectiveReason);
+    g_sQueuedPointsCacheRefreshReason[0] = '\0';
+    PrintToServer("[WhaleTracker] Points cache refresh start reason=%s age=%d players=%d round=%d",
+        effectiveReason,
+        age,
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
     RefreshWhalePointsCacheAll();
 }
 
@@ -216,7 +309,7 @@ public void OnMapStart()
     ClearOnlineStats();
     ResetPointsCacheRefreshState(false);
     g_hPointsCacheWarmupTimer = null;
-    SchedulePointsCacheWarmup();
+    SchedulePointsCacheWarmupWithReason(5.0, "map_start");
     g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();

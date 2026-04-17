@@ -1,0 +1,2 @@
+kogasa ALL=(root) NOPASSWD: /usr/bin/systemctl restart whaletracker-rust
+kogasa ALL=(root) NOPASSWD: /usr/bin/systemctl restart whaletracker-rust.service

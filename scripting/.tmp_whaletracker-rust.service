@@ -1,0 +1,19 @@
+[Unit]
+Description=WhaleTracker Rust SQL outlet listeners
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kogasa
+Group=kogasa
+WorkingDirectory=/home/kogasa/Whaletracker-Rust
+EnvironmentFile=/home/kogasa/.config/whaletracker-rust.env
+ExecStart=/home/kogasa/whaletracker-rust-systemd.sh
+Restart=always
+RestartSec=2
+KillMode=mixed
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

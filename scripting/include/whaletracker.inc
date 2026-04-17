@@ -507,6 +507,7 @@ void WhaleTracker_ScheduleReconnect(float delay)
 
     if (g_hReconnectTimer != null)
     {
+        PrintToServer("[WhaleTracker] DB reconnect already scheduled delay=%.2f", delay);
         return;
     }
 
@@ -519,6 +520,10 @@ void WhaleTracker_ScheduleReconnect(float delay)
         g_hDatabase = null;
     }
 
+    PrintToServer("[WhaleTracker] DB reconnect scheduled delay=%.2f players=%d round=%d",
+        delay,
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
     g_hReconnectTimer = CreateTimer(delay, WhaleTracker_ReconnectTimer);
 }
 
@@ -529,6 +534,9 @@ public Action WhaleTracker_ReconnectTimer(Handle timer, any data)
         g_hReconnectTimer = null;
     }
 
+    PrintToServer("[WhaleTracker] DB reconnect timer fired players=%d round=%d",
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
     WhaleTracker_SQLConnect();
     return Plugin_Stop;
 }

@@ -90,6 +90,8 @@ enum WeaponCategory
     WeaponCategory_Count = WeaponCategory_Revolvers
 }
 #define WEAPON_CATEGORY_COUNT 8
+#define WHALE_POINTS_CACHE_MAX_AGE 60
+#define WHALE_POINTS_CACHE_DB_LOCK "whaletracker_points_cache_refresh"
 
 enum ClientPointsCacheState
 {
@@ -104,6 +106,7 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 void RequestClientStateLoads(int client);
 int GetWhalePointsForClient(int client);
 public void RequestWhalePointsCacheRefresh();
+public void RequestWhalePointsCacheRefreshWithReason(const char[] reason);
 public void QueueRoundMvpSelection();
 bool IsClientPointsCacheFresh(int client, int maxAge);
 public void TryFlushPendingPointsRepliesForTarget(int target);
@@ -244,8 +247,13 @@ Handle g_hPointsCacheWarmupTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
 bool g_bPointsCacheRefreshQueued = false;
+bool g_bPointsCacheRefreshLockHeld = false;
 int g_iPointsCacheRefreshSerial = 0;
+int g_iPointsCacheRefreshLockSerial = 0;
 int g_iPointsCacheLastBuiltAt = 0;
+char g_sPointsCacheRefreshReason[128];
+char g_sQueuedPointsCacheRefreshReason[128];
+char g_sPointsCacheWarmupReason[128];
 
 ClientPointsCacheState g_eClientPointsCacheState[MAXPLAYERS + 1];
 int g_iClientCachedPoints[MAXPLAYERS + 1];

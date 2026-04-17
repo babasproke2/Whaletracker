@@ -215,10 +215,10 @@ bool GetRoundMvpCandidateCache(int client, int &rank, int &points, bool &needsRe
         return false;
     }
 
-    if (!IsClientPointsCacheFresh(client, 60))
+    if (!IsClientPointsCacheFresh(client, WHALE_POINTS_CACHE_MAX_AGE))
     {
         RequestClientPointsCacheQuery(client);
-        if (IsWhalePointsCacheGloballyFresh(60))
+        if (IsWhalePointsCacheGloballyFresh(WHALE_POINTS_CACHE_MAX_AGE))
         {
             if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Missing)
             {
@@ -381,7 +381,7 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
     if ((needRed || needBlue) && needsRefresh)
     {
         g_bRoundMvpSelectionAfterRefresh = true;
-        RequestWhalePointsCacheRefresh();
+        RequestWhalePointsCacheRefreshWithReason("mvp_select_stale_global_cache");
         return Plugin_Stop;
     }
 
