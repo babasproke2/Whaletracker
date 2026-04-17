@@ -965,6 +965,11 @@ bool GetSteamIdColoredDisplayName(const char[] steamId, char[] buffer, int maxle
 
     char colorTag[32];
     GetNameColorTagForSteamId(steamId, colorTag, sizeof(colorTag));
+    if (StrEqual(colorTag, "teamcolor", false) || StrEqual(colorTag, "{teamcolor}", false))
+    {
+        strcopy(colorTag, sizeof(colorTag), "gold");
+    }
+
     if (colorTag[0] != '\0')
     {
         Format(buffer, maxlen, "{%s}%s{default}", colorTag, name);
