@@ -661,7 +661,7 @@ public void WhaleTracker_LoadCallback(Database db, DBResultSet results, const ch
 
     TouchClientLastSeen(index);
     WhaleTracker_RefreshClientTrackingState(index);
-    if (g_bRoundMvpSelectionAfterRefresh && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
+    if (g_bRoundMvpSelectionPending && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
     {
         QueueRoundMvpSelection();
     }

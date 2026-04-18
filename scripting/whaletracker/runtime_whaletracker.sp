@@ -122,13 +122,11 @@ public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
 {
     char effectiveReason[128];
     strcopy(effectiveReason, sizeof(effectiveReason), reason[0] ? reason : "unspecified");
-    int age = (g_iPointsCacheLastBuiltAt > 0) ? (GetTime() - g_iPointsCacheLastBuiltAt) : -1;
 
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
-        PrintToServer("[WhaleTracker] Points cache refresh dropped reason=%s db_ready=0 age=%d players=%d round=%d",
+        PrintToServer("[WhaleTracker] Points cache refresh dropped reason=%s db_ready=0 players=%d round=%d",
             effectiveReason,
-            age,
             GetClientCount(false),
             WhaleTracker_IsRoundRunning() ? 1 : 0);
         return;
@@ -138,10 +136,9 @@ public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
     {
         g_bPointsCacheRefreshQueued = true;
         strcopy(g_sQueuedPointsCacheRefreshReason, sizeof(g_sQueuedPointsCacheRefreshReason), effectiveReason);
-        PrintToServer("[WhaleTracker] Points cache refresh queued reason=%s active_reason=%s age=%d players=%d round=%d",
+        PrintToServer("[WhaleTracker] Points cache refresh queued reason=%s active_reason=%s players=%d round=%d",
             effectiveReason,
             g_sPointsCacheRefreshReason[0] ? g_sPointsCacheRefreshReason : "unknown",
-            age,
             GetClientCount(false),
             WhaleTracker_IsRoundRunning() ? 1 : 0);
         return;
@@ -149,9 +146,8 @@ public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
 
     strcopy(g_sPointsCacheRefreshReason, sizeof(g_sPointsCacheRefreshReason), effectiveReason);
     g_sQueuedPointsCacheRefreshReason[0] = '\0';
-    PrintToServer("[WhaleTracker] Points cache refresh start reason=%s age=%d players=%d round=%d",
+    PrintToServer("[WhaleTracker] Points cache refresh start reason=%s players=%d round=%d",
         effectiveReason,
-        age,
         GetClientCount(false),
         WhaleTracker_IsRoundRunning() ? 1 : 0);
     RefreshWhalePointsCacheAll();
@@ -642,7 +638,7 @@ void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
 
     char query[512];
     Format(query, sizeof(query),
-        "SELECT points, rank, updated_at, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+        "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
     g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, pack);
 }
@@ -665,7 +661,6 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Error;
         g_iClientCachedPoints[client] = 0;
         g_iClientCachedRank[client] = 0;
-        g_iClientCachedUpdatedAt[client] = 0;
         g_sClientCachedColor[client][0] = '\0';
         g_sClientCachedName[client][0] = '\0';
         g_sClientCachedPrename[client][0] = '\0';
@@ -674,13 +669,11 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         {
             WhaleTracker_ScheduleReconnect(2.0);
         }
-        TryFlushPendingPointsRepliesForTarget(client);
         return;
     }
 
     int points = 0;
     int rank = 0;
-    int updatedAt = 0;
     char colorTag[32];
     char cachedName[128];
     char cachedPrename[128];
@@ -693,7 +686,6 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Ready;
         points = results.FetchInt(0);
         rank = results.FetchInt(1);
-        updatedAt = results.FetchInt(2);
         if (points < 0)
         {
             points = 0;
@@ -703,9 +695,9 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
             rank = 0;
         }
 
-        results.FetchString(3, colorTag, sizeof(colorTag));
-        results.FetchString(4, cachedName, sizeof(cachedName));
-        results.FetchString(5, cachedPrename, sizeof(cachedPrename));
+        results.FetchString(2, colorTag, sizeof(colorTag));
+        results.FetchString(3, cachedName, sizeof(cachedName));
+        results.FetchString(4, cachedPrename, sizeof(cachedPrename));
         TrimString(colorTag);
         TrimString(cachedName);
         TrimString(cachedPrename);
@@ -717,12 +709,10 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
 
     g_iClientCachedPoints[client] = points;
     g_iClientCachedRank[client] = rank;
-    g_iClientCachedUpdatedAt[client] = updatedAt;
     strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
     strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
     strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
-    TryFlushPendingPointsRepliesForTarget(client);
-    if (g_bRoundMvpSelectionAfterRefresh && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
+    if (g_bRoundMvpSelectionPending && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
     {
         QueueRoundMvpSelection();
     }

@@ -190,12 +190,10 @@ public void QueueRoundMvpSelection()
     g_hRoundMvpTimer = CreateTimer(0.25, Timer_SetRoundMvps, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-bool GetRoundMvpCandidateCache(int client, int &rank, int &points, bool &needsRefresh, bool &waitingForClientCache)
+bool GetRoundMvpCandidateLive(int client, int &points, bool &waitingForStats)
 {
-    rank = 0;
     points = 0;
-    needsRefresh = false;
-    waitingForClientCache = false;
+    waitingForStats = false;
 
     if (!IsClientInGame(client) || IsFakeClient(client))
     {
@@ -203,10 +201,10 @@ bool GetRoundMvpCandidateCache(int client, int &rank, int &points, bool &needsRe
     }
 
     EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0')
+    if (g_Stats[client].steamId[0] == '\0' || !g_Stats[client].loaded || g_bStatsLoadPending[client])
     {
         RequestClientStateLoads(client);
-        waitingForClientCache = true;
+        waitingForStats = true;
         return false;
     }
 
@@ -215,48 +213,16 @@ bool GetRoundMvpCandidateCache(int client, int &rank, int &points, bool &needsRe
         return false;
     }
 
-    if (!IsClientPointsCacheFresh(client, WHALE_POINTS_CACHE_MAX_AGE))
-    {
-        RequestClientPointsCacheQuery(client);
-        if (IsWhalePointsCacheGloballyFresh(WHALE_POINTS_CACHE_MAX_AGE))
-        {
-            if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Missing)
-            {
-                return false;
-            }
-
-            waitingForClientCache = true;
-        }
-        else
-        {
-            needsRefresh = true;
-        }
-        return false;
-    }
-
-    int cachedRank = 0;
-    int cachedPoints = 0;
-    char cachedName[128];
-    char cachedColor[32];
-    char cachedPrename[64];
-    if (!GetCachedWhalePointsForClient(client, cachedPoints, cachedRank, cachedName, sizeof(cachedName), cachedColor, sizeof(cachedColor), cachedPrename, sizeof(cachedPrename)))
-    {
-        RequestClientPointsCacheQuery(client);
-        needsRefresh = true;
-        return false;
-    }
-
-    if (cachedRank < 1)
+    points = GetWhalePointsForStats(g_Stats[client]);
+    if (points < 1)
     {
         return false;
     }
 
-    rank = cachedRank;
-    points = cachedPoints;
     return true;
 }
 
-bool IsBetterRoundMvpCandidate(int candidate, int candidateRank, int candidatePoints, int currentBest, int currentBestRank, int currentBestPoints)
+bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBest, int currentBestPoints)
 {
     if (candidate <= 0)
     {
@@ -266,16 +232,6 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidateRank, int candidatePo
     if (currentBest <= 0)
     {
         return true;
-    }
-
-    if (candidateRank < currentBestRank)
-    {
-        return true;
-    }
-
-    if (candidateRank > currentBestRank)
-    {
-        return false;
     }
 
     if (candidatePoints > currentBestPoints)
@@ -307,7 +263,7 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
     SnapshotCurrentRoundMvpStateToLastRound();
     ClearCurrentRoundMvpState();
-    g_bRoundMvpSelectionAfterRefresh = false;
+    g_bRoundMvpSelectionPending = false;
     g_hRoundMvpTimer = null;
 
     QueueRoundMvpSelection();
@@ -326,12 +282,9 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
     bool needBlue = (g_sRoundMvpSteamId[3][0] == '\0');
     int redMvp = 0;
     int blueMvp = 0;
-    int bestRedRank = 0;
-    int bestBlueRank = 0;
     int bestRedPoints = 0;
     int bestBluePoints = 0;
-    bool needsRefresh = false;
-    bool waitingForClientCache = false;
+    bool waitingForStats = false;
 
     if (!needRed && !needBlue)
     {
@@ -351,47 +304,35 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
             continue;
         }
 
-        int rank = 0;
         int points = 0;
-        bool clientNeedsRefresh = false;
-        bool clientWaitingForCache = false;
-        if (!GetRoundMvpCandidateCache(i, rank, points, clientNeedsRefresh, clientWaitingForCache))
+        bool clientWaitingForStats = false;
+        if (!GetRoundMvpCandidateLive(i, points, clientWaitingForStats))
         {
-            needsRefresh |= clientNeedsRefresh;
-            waitingForClientCache |= clientWaitingForCache;
+            waitingForStats |= clientWaitingForStats;
             continue;
         }
 
-        if (needRed && team == 2 && IsBetterRoundMvpCandidate(i, rank, points, redMvp, bestRedRank, bestRedPoints))
+        if (needRed && team == 2 && IsBetterRoundMvpCandidate(i, points, redMvp, bestRedPoints))
         {
             redMvp = i;
-            bestRedRank = rank;
             bestRedPoints = points;
             continue;
         }
 
-        if (needBlue && team == 3 && IsBetterRoundMvpCandidate(i, rank, points, blueMvp, bestBlueRank, bestBluePoints))
+        if (needBlue && team == 3 && IsBetterRoundMvpCandidate(i, points, blueMvp, bestBluePoints))
         {
             blueMvp = i;
-            bestBlueRank = rank;
             bestBluePoints = points;
         }
     }
 
-    if ((needRed || needBlue) && needsRefresh)
+    if ((needRed || needBlue) && waitingForStats)
     {
-        g_bRoundMvpSelectionAfterRefresh = true;
-        RequestWhalePointsCacheRefreshWithReason("mvp_select_stale_global_cache");
+        g_bRoundMvpSelectionPending = true;
         return Plugin_Stop;
     }
 
-    if ((needRed || needBlue) && waitingForClientCache)
-    {
-        g_bRoundMvpSelectionAfterRefresh = true;
-        return Plugin_Stop;
-    }
-
-    g_bRoundMvpSelectionAfterRefresh = false;
+    g_bRoundMvpSelectionPending = false;
 
     if (needRed && redMvp > 0)
     {
