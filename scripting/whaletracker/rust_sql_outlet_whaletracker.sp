@@ -156,11 +156,11 @@ void WhaleTracker_RustFlushPendingToLocal()
             continue;
         }
 
-        DBResultSet results = SQL_Query(g_hDatabase, sql);
+        DBResultSet results = SQLQuerySync(sql);
         if (results == null)
         {
             char error[256];
-            SQL_GetError(g_hDatabase, error, sizeof(error));
+            GetSyncDatabaseError(error, sizeof(error));
             LogError("[WhaleTracker] Rust SQL outlet local fallback failed (user %d): %s | Query: %s", userId, error, sql);
             continue;
         }

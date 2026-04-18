@@ -12,10 +12,17 @@ public void WhaleTracker_SQLConnect()
         g_hDatabase = null;
     }
 
+    if (g_hSyncDatabase != null)
+    {
+        delete g_hSyncDatabase;
+        g_hSyncDatabase = null;
+    }
+
     g_bDatabaseReady = false;
     g_CvarDatabase.GetString(g_sDatabaseConfig, sizeof(g_sDatabaseConfig));
     g_bShuttingDown = false;
     Database.Connect(T_SQLConnect, g_sDatabaseConfig);
+    Database.Connect(T_SQLSyncConnect, g_sDatabaseConfig);
 }
 
 public void T_SQLConnect(Database db, const char[] error, any data)
@@ -221,7 +228,29 @@ public void T_SQLConnect(Database db, const char[] error, any data)
         ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     g_hDatabase.Query(WhaleTracker_CreatePointsCacheTable, query);
 
-    SQL_FastQuery(g_hDatabase, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
+    g_hDatabase.Query(WhaleTracker_CreateTable, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
+}
+
+public void T_SQLSyncConnect(Database db, const char[] error, any data)
+{
+    if (db == null)
+    {
+        LogError("[WhaleTracker] Sync database connection failed: %s", error);
+        return;
+    }
+
+    if (g_hSyncDatabase != null)
+    {
+        delete g_hSyncDatabase;
+        g_hSyncDatabase = null;
+    }
+
+    g_hSyncDatabase = db;
+
+    if (!g_hSyncDatabase.SetCharset("utf8mb4"))
+    {
+        LogError("[WhaleTracker] Failed to set sync database charset to utf8mb4.");
+    }
 }
 
 public void WhaleTracker_CreateTable(Database db, DBResultSet results, const char[] error, any data)

@@ -495,6 +495,12 @@ void WhaleTracker_ScheduleReconnect(float delay)
         g_hDatabase = null;
     }
 
+    if (g_hSyncDatabase != null)
+    {
+        delete g_hSyncDatabase;
+        g_hSyncDatabase = null;
+    }
+
     PrintToServer("[WhaleTracker] DB reconnect scheduled delay=%.2f players=%d round=%d",
         delay,
         GetClientCount(false),
@@ -523,13 +529,13 @@ bool WhaleTracker_IsDatabaseHealthy()
         return false;
     }
 
-    if (SQL_FastQuery(g_hDatabase, "SELECT 1"))
+    if (SQLFastQuerySync("SELECT 1"))
     {
         return true;
     }
 
     char error[256];
-    SQL_GetError(g_hDatabase, error, sizeof(error));
+    GetSyncDatabaseError(error, sizeof(error));
     LogError("[WhaleTracker] DB health check failed: %s", error);
     WhaleTracker_ScheduleReconnect(1.0);
     return false;
@@ -1739,15 +1745,15 @@ void MarkClientDirty(int client)
 
 void RunSaveQuerySync(const char[] query, int userId)
 {
-    if (g_hDatabase == null)
+    if (GetSyncDatabaseHandle() == null)
     {
         return;
     }
 
-    if (!SQL_FastQuery(g_hDatabase, query))
+    if (!SQLFastQuerySync(query))
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
 
         if (userId > 0)
         {

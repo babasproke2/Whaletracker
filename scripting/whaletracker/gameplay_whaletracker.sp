@@ -246,11 +246,11 @@ void LoadRoundMvpCachedPoints(StringMap cachedPoints)
         ... "WHERE steamid IN (%s)",
         inClause);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
         LogError("[WhaleTracker] Failed to load round MVP cache points: %s", error);
         if (WhaleTracker_IsConnectionLostError(error))
         {

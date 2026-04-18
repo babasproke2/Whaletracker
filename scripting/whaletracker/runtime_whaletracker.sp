@@ -33,6 +33,50 @@ void ReleasePointsCacheRefreshLockOnDatabase(Database db = null)
     SQL_FastQuery(releaseDb, query);
 }
 
+public Database GetSyncDatabaseHandle()
+{
+    if (g_hSyncDatabase != null)
+    {
+        return g_hSyncDatabase;
+    }
+
+    return g_hDatabase;
+}
+
+public DBResultSet SQLQuerySync(const char[] query)
+{
+    Database db = GetSyncDatabaseHandle();
+    if (db == null)
+    {
+        return null;
+    }
+
+    return SQL_Query(db, query);
+}
+
+public bool SQLFastQuerySync(const char[] query)
+{
+    Database db = GetSyncDatabaseHandle();
+    if (db == null)
+    {
+        return false;
+    }
+
+    return SQL_FastQuery(db, query);
+}
+
+public void GetSyncDatabaseError(char[] error, int maxlen)
+{
+    Database db = GetSyncDatabaseHandle();
+    if (db == null)
+    {
+        strcopy(error, maxlen, "No sync database handle");
+        return;
+    }
+
+    SQL_GetError(db, error, maxlen);
+}
+
 void ReleasePointsCacheRefreshLockForSerial(Database db, int refreshSerial)
 {
     if (!g_bPointsCacheRefreshLockHeld || g_iPointsCacheRefreshLockSerial != refreshSerial)
@@ -446,7 +490,18 @@ public void OnPluginEnd()
         g_MapMvpHistory = null;
     }
 
-    g_hDatabase = null;
+    if (g_hDatabase != null)
+    {
+        delete g_hDatabase;
+        g_hDatabase = null;
+    }
+
+    if (g_hSyncDatabase != null)
+    {
+        delete g_hSyncDatabase;
+        g_hSyncDatabase = null;
+    }
+
     g_bDatabaseReady = false;
     g_hVisibleMaxPlayers = null;
 

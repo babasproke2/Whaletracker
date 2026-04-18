@@ -877,7 +877,7 @@ bool GetSteamIdRecordedName(const char[] steamId, char[] buffer, int maxlen)
         ... "LIMIT 1",
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         return false;
@@ -969,11 +969,11 @@ bool FindSeenMatch(const char[] search, char[] steamId, int steamIdLen, char[] m
         escapedSearch,
         escapedSearch);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
         LogError("[WhaleTracker] Seen match query failed: %s", error);
         return false;
     }
@@ -1201,7 +1201,7 @@ void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen
         "SELECT color FROM filters_namecolors WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results != null && SQL_HasResultSet(results) && results.FetchRow())
     {
         results.FetchString(0, colorTag, maxlen);
@@ -1218,7 +1218,7 @@ void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen
         "SELECT name_color FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
-    results = SQL_Query(g_hDatabase, query);
+    results = SQLQuerySync(query);
     if (results != null && SQL_HasResultSet(results) && results.FetchRow())
     {
         results.FetchString(0, colorTag, maxlen);
@@ -1665,11 +1665,11 @@ public int GetWhalePointsForClient(int client)
         ... "FROM whaletracker WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
         LogError("[WhaleTracker] WhalePoints query failed: %s", error);
         return 0;
     }
@@ -1798,11 +1798,11 @@ int GetLastSeenForSteamId64(const char[] steamId)
         "SELECT COALESCE(last_seen, 0) FROM whaletracker WHERE steamid = '%s' LIMIT 1",
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
         LogError("[WhaleTracker] LastSeen query failed: %s", error);
         return 0;
     }
@@ -1889,11 +1889,11 @@ public any Native_WhaleTracker_GetLastRecordedName(Handle plugin, int numParams)
         ... "LIMIT 1",
         escapedSteamId);
 
-    DBResultSet results = SQL_Query(g_hDatabase, query);
+    DBResultSet results = SQLQuerySync(query);
     if (results == null)
     {
         char error[256];
-        SQL_GetError(g_hDatabase, error, sizeof(error));
+        GetSyncDatabaseError(error, sizeof(error));
         LogError("[WhaleTracker] LastRecordedName query failed: %s", error);
         SetNativeString(2, "", maxlen, true);
         return false;

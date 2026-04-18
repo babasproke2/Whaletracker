@@ -106,6 +106,10 @@ void RequestClientStateLoads(int client);
 int GetWhalePointsForClient(int client);
 public void RequestWhalePointsCacheRefreshWithReason(const char[] reason);
 public void QueueRoundMvpSelection();
+Database GetSyncDatabaseHandle();
+DBResultSet SQLQuerySync(const char[] query);
+bool SQLFastQuerySync(const char[] query);
+void GetSyncDatabaseError(char[] error, int maxlen);
 
 enum struct WhaleStats
 {
@@ -159,6 +163,7 @@ bool g_bTrackEligible[MAXPLAYERS + 1];
 int g_iDamageGate[MAXPLAYERS + 1];
 
 Database g_hDatabase = null;
+Database g_hSyncDatabase = null;
 ConVar g_CvarDatabase = null;
 ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hGameName = null;
