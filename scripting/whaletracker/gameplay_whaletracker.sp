@@ -190,7 +190,92 @@ public void QueueRoundMvpSelection()
     g_hRoundMvpTimer = CreateTimer(0.25, Timer_SetRoundMvps, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
-bool GetRoundMvpCandidateLive(int client, int &points, bool &waitingForStats)
+void LoadRoundMvpCachedPoints(StringMap cachedPoints)
+{
+    if (cachedPoints == null || !g_bDatabaseReady || g_hDatabase == null)
+    {
+        return;
+    }
+
+    char inClause[4096];
+    int candidateCount = 0;
+    inClause[0] = '\0';
+
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientInGame(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        int team = GetClientTeam(i);
+        if (team != 2 && team != 3)
+        {
+            continue;
+        }
+
+        EnsureClientSteamId(i);
+        if (g_Stats[i].steamId[0] == '\0' || HasSteamIdBeenMapMvp(g_Stats[i].steamId))
+        {
+            continue;
+        }
+
+        char escapedSteamId[STEAMID64_LEN * 2];
+        EscapeSqlString(g_Stats[i].steamId, escapedSteamId, sizeof(escapedSteamId));
+
+        if (candidateCount > 0)
+        {
+            StrCat(inClause, sizeof(inClause), ",");
+        }
+
+        StrCat(inClause, sizeof(inClause), "'");
+        StrCat(inClause, sizeof(inClause), escapedSteamId);
+        StrCat(inClause, sizeof(inClause), "'");
+        candidateCount++;
+    }
+
+    if (candidateCount <= 0)
+    {
+        return;
+    }
+
+    char query[6144];
+    Format(query, sizeof(query),
+        "SELECT steamid, points "
+        ... "FROM whaletracker_points_cache "
+        ... "WHERE steamid IN (%s)",
+        inClause);
+
+    DBResultSet results = SQL_Query(g_hDatabase, query);
+    if (results == null)
+    {
+        char error[256];
+        SQL_GetError(g_hDatabase, error, sizeof(error));
+        LogError("[WhaleTracker] Failed to load round MVP cache points: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
+        {
+            WhaleTracker_ScheduleReconnect(2.0);
+        }
+        return;
+    }
+
+    while (SQL_HasResultSet(results) && results.FetchRow())
+    {
+        char steamId[STEAMID64_LEN];
+        results.FetchString(0, steamId, sizeof(steamId));
+        TrimString(steamId);
+        if (steamId[0] == '\0')
+        {
+            continue;
+        }
+
+        cachedPoints.SetValue(steamId, results.FetchInt(1), true);
+    }
+
+    delete results;
+}
+
+bool GetRoundMvpCandidatePoints(int client, StringMap cachedPoints, int &points, bool &waitingForStats)
 {
     points = 0;
     waitingForStats = false;
@@ -201,10 +286,8 @@ bool GetRoundMvpCandidateLive(int client, int &points, bool &waitingForStats)
     }
 
     EnsureClientSteamId(client);
-    if (g_Stats[client].steamId[0] == '\0' || !g_Stats[client].loaded || g_bStatsLoadPending[client])
+    if (g_Stats[client].steamId[0] == '\0')
     {
-        RequestClientStateLoads(client);
-        waitingForStats = true;
         return false;
     }
 
@@ -213,13 +296,24 @@ bool GetRoundMvpCandidateLive(int client, int &points, bool &waitingForStats)
         return false;
     }
 
-    points = GetWhalePointsForStats(g_Stats[client]);
-    if (points < 1)
+    if (cachedPoints != null && cachedPoints.GetValue(g_Stats[client].steamId, points))
     {
+        return (points > 0);
+    }
+
+    if (!g_Stats[client].loaded)
+    {
+        if (!g_bStatsLoadPending[client])
+        {
+            RequestClientStateLoads(client);
+        }
+
+        waitingForStats = true;
         return false;
     }
 
-    return true;
+    points = GetWhalePointsForStats(g_Stats[client]);
+    return (points > 0);
 }
 
 bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBest, int currentBestPoints)
@@ -259,24 +353,12 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBe
     return candidate < currentBest;
 }
 
-public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+bool SelectRoundMvpsNow()
 {
-    SnapshotCurrentRoundMvpStateToLastRound();
-    ClearCurrentRoundMvpState();
-    g_bRoundMvpSelectionPending = false;
-    g_hRoundMvpTimer = null;
-
-    QueueRoundMvpSelection();
-}
-
-public Action Timer_SetRoundMvps(Handle timer, any data)
-{
-    if (timer != INVALID_HANDLE && timer != g_hRoundMvpTimer)
+    if (!WhaleTracker_IsRoundRunning())
     {
-        return Plugin_Stop;
+        return false;
     }
-
-    g_hRoundMvpTimer = null;
 
     bool needRed = (g_sRoundMvpSteamId[2][0] == '\0');
     bool needBlue = (g_sRoundMvpSteamId[3][0] == '\0');
@@ -288,8 +370,11 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
 
     if (!needRed && !needBlue)
     {
-        return Plugin_Stop;
+        return false;
     }
+
+    StringMap cachedPoints = new StringMap();
+    LoadRoundMvpCachedPoints(cachedPoints);
 
     for (int i = 1; i <= MaxClients; i++)
     {
@@ -306,7 +391,7 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
 
         int points = 0;
         bool clientWaitingForStats = false;
-        if (!GetRoundMvpCandidateLive(i, points, clientWaitingForStats))
+        if (!GetRoundMvpCandidatePoints(i, cachedPoints, points, clientWaitingForStats))
         {
             waitingForStats |= clientWaitingForStats;
             continue;
@@ -326,13 +411,7 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
         }
     }
 
-    if ((needRed || needBlue) && waitingForStats)
-    {
-        g_bRoundMvpSelectionPending = true;
-        return Plugin_Stop;
-    }
-
-    g_bRoundMvpSelectionPending = false;
+    delete cachedPoints;
 
     if (needRed && redMvp > 0)
     {
@@ -349,6 +428,32 @@ public Action Timer_SetRoundMvps(Handle timer, any data)
         CPrintToChatAll("{magenta}MVPs{default} this round: {red}%N{default}, {blue}%N", redMvp, blueMvp);
     }
 
+    if (((needRed && redMvp <= 0) || (needBlue && blueMvp <= 0)) && waitingForStats)
+    {
+        QueueRoundMvpSelection();
+    }
+
+    return (redMvp > 0 || blueMvp > 0);
+}
+
+public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
+{
+    SnapshotCurrentRoundMvpStateToLastRound();
+    ClearCurrentRoundMvpState();
+    g_hRoundMvpTimer = null;
+
+    QueueRoundMvpSelection();
+}
+
+public Action Timer_SetRoundMvps(Handle timer, any data)
+{
+    if (timer != INVALID_HANDLE && timer != g_hRoundMvpTimer)
+    {
+        return Plugin_Stop;
+    }
+
+    g_hRoundMvpTimer = null;
+    SelectRoundMvpsNow();
     return Plugin_Stop;
 }
 

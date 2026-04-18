@@ -104,7 +104,6 @@ enum ClientPointsCacheState
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
 void RequestClientStateLoads(int client);
 int GetWhalePointsForClient(int client);
-public void RequestWhalePointsCacheRefresh();
 public void RequestWhalePointsCacheRefreshWithReason(const char[] reason);
 public void QueueRoundMvpSelection();
 
@@ -252,16 +251,11 @@ char g_sQueuedPointsCacheRefreshReason[128];
 char g_sPointsCacheWarmupReason[128];
 
 ClientPointsCacheState g_eClientPointsCacheState[MAXPLAYERS + 1];
-int g_iClientCachedPoints[MAXPLAYERS + 1];
-int g_iClientCachedRank[MAXPLAYERS + 1];
-char g_sClientCachedName[MAXPLAYERS + 1][128];
 char g_sClientCachedColor[MAXPLAYERS + 1][32];
-char g_sClientCachedPrename[MAXPLAYERS + 1][64];
 bool g_bRoundMvp[MAXPLAYERS + 1];
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
 Handle g_hRoundMvpTimer = null;
-bool g_bRoundMvpSelectionPending = false;
 StringMap g_MapMvpHistory = null;
 
 bool g_bFavoriteClassLoaded[MAXPLAYERS + 1];

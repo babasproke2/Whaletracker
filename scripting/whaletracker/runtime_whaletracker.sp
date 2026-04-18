@@ -113,11 +113,6 @@ public Action Timer_WarmupPointsCache(Handle timer, any data)
     return Plugin_Stop;
 }
 
-public void RequestWhalePointsCacheRefresh()
-{
-    RequestWhalePointsCacheRefreshWithReason("legacy");
-}
-
 public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
 {
     char effectiveReason[128];
@@ -594,16 +589,6 @@ public void OnClientPostAdminCheck(int client)
     RefreshClientRoundMvpFlag(client);
 }
 
-/*void AnnounceDefaultJoin(int client)
-{
-    if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client))
-    {
-        return;
-    }
-
-    //CPrintToChatAll("%N joined the game", client);
-}*/
-
 void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
 {
     if (!IsValidClient(client) || !IsClientInGame(client) || IsFakeClient(client))
@@ -613,7 +598,6 @@ void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
 
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
-        //AnnounceDefaultJoin(client);
         return;
     }
 
@@ -637,9 +621,18 @@ void RequestClientPointsCacheQuery(int client, bool announceJoin = false)
     pack.WriteCell(announceJoin ? 1 : 0);
 
     char query[512];
-    Format(query, sizeof(query),
-        "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
-        escapedSteamId);
+    if (announceJoin)
+    {
+        Format(query, sizeof(query),
+            "SELECT points, rank, name_color, name, prename FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+            escapedSteamId);
+    }
+    else
+    {
+        Format(query, sizeof(query),
+            "SELECT name_color FROM whaletracker_points_cache WHERE steamid = '%s' LIMIT 1",
+            escapedSteamId);
+    }
     g_hDatabase.Query(WhaleTracker_JoinMessageQueryCallback, query, pack);
 }
 
@@ -659,11 +652,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (error[0] != '\0')
     {
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Error;
-        g_iClientCachedPoints[client] = 0;
-        g_iClientCachedRank[client] = 0;
         g_sClientCachedColor[client][0] = '\0';
-        g_sClientCachedName[client][0] = '\0';
-        g_sClientCachedPrename[client][0] = '\0';
         LogError("[WhaleTracker] Failed to query points cache for join message: %s", error);
         if (WhaleTracker_IsConnectionLostError(error))
         {
@@ -684,20 +673,28 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
     if (results != null && results.FetchRow())
     {
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Ready;
-        points = results.FetchInt(0);
-        rank = results.FetchInt(1);
-        if (points < 0)
+        if (announceJoin)
         {
-            points = 0;
+            points = results.FetchInt(0);
+            rank = results.FetchInt(1);
+            if (points < 0)
+            {
+                points = 0;
+            }
+            if (rank < 0)
+            {
+                rank = 0;
+            }
+
+            results.FetchString(2, colorTag, sizeof(colorTag));
+            results.FetchString(3, cachedName, sizeof(cachedName));
+            results.FetchString(4, cachedPrename, sizeof(cachedPrename));
         }
-        if (rank < 0)
+        else
         {
-            rank = 0;
+            results.FetchString(0, colorTag, sizeof(colorTag));
         }
 
-        results.FetchString(2, colorTag, sizeof(colorTag));
-        results.FetchString(3, cachedName, sizeof(cachedName));
-        results.FetchString(4, cachedPrename, sizeof(cachedPrename));
         TrimString(colorTag);
         TrimString(cachedName);
         TrimString(cachedPrename);
@@ -707,15 +704,7 @@ public void WhaleTracker_JoinMessageQueryCallback(Database db, DBResultSet resul
         g_eClientPointsCacheState[client] = ClientPointsCacheState_Missing;
     }
 
-    g_iClientCachedPoints[client] = points;
-    g_iClientCachedRank[client] = rank;
     strcopy(g_sClientCachedColor[client], sizeof(g_sClientCachedColor[]), colorTag);
-    strcopy(g_sClientCachedName[client], sizeof(g_sClientCachedName[]), cachedName);
-    strcopy(g_sClientCachedPrename[client], sizeof(g_sClientCachedPrename[]), cachedPrename);
-    if (g_bRoundMvpSelectionPending && (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0'))
-    {
-        QueueRoundMvpSelection();
-    }
 
     if (!announceJoin)
     {

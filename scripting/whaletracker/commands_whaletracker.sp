@@ -303,8 +303,7 @@ public Action Command_ShowMvps(int client, int args)
 
     if (missingCurrentMvp && WhaleTracker_IsRoundRunning())
     {
-        g_bRoundMvpSelectionPending = true;
-        QueueRoundMvpSelection();
+        SelectRoundMvpsNow();
 
         currentRed = FindConnectedClientBySteamId(g_sRoundMvpSteamId[2]);
         currentBlue = FindConnectedClientBySteamId(g_sRoundMvpSteamId[3]);
@@ -781,11 +780,7 @@ void ResetClientCommandCaches(int client)
     }
 
     g_eClientPointsCacheState[client] = ClientPointsCacheState_Unknown;
-    g_iClientCachedPoints[client] = 0;
-    g_iClientCachedRank[client] = 0;
-    g_sClientCachedName[client][0] = '\0';
     g_sClientCachedColor[client][0] = '\0';
-    g_sClientCachedPrename[client][0] = '\0';
 
     g_bFavoriteClassLoaded[client] = false;
     g_bFavoriteClassPending[client] = false;
@@ -1351,12 +1346,6 @@ void FinishWhalePointsCacheRefresh(bool success)
             }
 
             RequestClientPointsCacheQuery(i);
-        }
-
-        if (g_bRoundMvpSelectionPending)
-        {
-            g_bRoundMvpSelectionPending = false;
-            QueueRoundMvpSelection();
         }
 
         PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table. reason=%s rerun=%d queued_reason=%s players=%d round=%d",
