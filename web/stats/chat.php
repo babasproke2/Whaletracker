@@ -17,39 +17,18 @@ function wt_chat_log(string $message): void {
 
 // Helpers
 function wt_chat_db_init(PDO $pdo): void {
-    $pdo->exec(
-        'CREATE TABLE IF NOT EXISTS whaletracker_chat (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            created_at INT NOT NULL,
-            steamid VARCHAR(32) NULL,
-            personaname VARCHAR(128) NULL,
-            iphash VARCHAR(64) NULL,
-            message TEXT NOT NULL,
-            server_ip VARCHAR(64) NULL,
-            server_port INT NULL,
-            alert TINYINT(1) NOT NULL DEFAULT 1,
-            INDEX(created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
-    );
-    $pdo->exec(
-        'CREATE TABLE IF NOT EXISTS whaletracker_chat_outbox (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            created_at INT NOT NULL,
-            iphash VARCHAR(64) NOT NULL,
-            display_name VARCHAR(128) DEFAULT \'\',
-            message TEXT NOT NULL,
-            server_ip VARCHAR(64) NULL,
-            server_port INT NULL,
-            delivered_to TEXT NULL,
-            INDEX(created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
-    );
     try {
-        $pdo->exec('ALTER TABLE whaletracker_chat ADD COLUMN alert TINYINT(1) NOT NULL DEFAULT 1 AFTER server_port');
-    } catch (Throwable $e) {
-        if (stripos($e->getMessage(), 'Duplicate column name') === false) {
-            throw $e;
+        $stmt = $pdo->query('SELECT COALESCE(MAX(version), 0) FROM whaletracker_schema_migrations');
+        $version = (int)($stmt ? $stmt->fetchColumn() : 0);
+        if ($version < WT_WHALETRACKER_SCHEMA_VERSION) {
+            wt_chat_log(sprintf(
+                'schema not ready: have %d need %d',
+                $version,
+                WT_WHALETRACKER_SCHEMA_VERSION
+            ));
         }
+    } catch (Throwable $e) {
+        wt_chat_log('schema check failed: ' . $e->getMessage());
     }
 }
 

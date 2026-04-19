@@ -27,7 +27,7 @@ const WT_WEAPON_CATEGORY_METADATA = [
 
 const WT_MAX_WEAPON_SLOTS = 3;
 const WT_ADMINS_TABLE = 'admins';
-const WT_WHALETRACKER_SCHEMA_VERSION = 2;
+const WT_WHALETRACKER_SCHEMA_VERSION = 3;
 
 function wt_class_meta_by_slug(?string $slug): ?array
 {
