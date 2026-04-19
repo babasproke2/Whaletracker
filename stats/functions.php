@@ -27,6 +27,7 @@ const WT_WEAPON_CATEGORY_METADATA = [
 
 const WT_MAX_WEAPON_SLOTS = 3;
 const WT_ADMINS_TABLE = 'admins';
+const WT_WHALETRACKER_SCHEMA_VERSION = 2;
 
 function wt_class_meta_by_slug(?string $slug): ?array
 {
@@ -353,68 +354,27 @@ function wt_clear_online_cache_flag(PDO $pdo, string $cacheKey): void
 
 function wt_ensure_log_class_schema(): void
 {
-    static $ensured = false;
-    if ($ensured) {
+    static $checked = false;
+    if ($checked) {
         return;
     }
 
     $pdo = wt_pdo();
-    $queries = [
-        'ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS classes_mask INT DEFAULT 0',
-        'ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS classes_mask INT DEFAULT 0',
-        'ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots INT DEFAULT 0',
-        'ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits INT DEFAULT 0',
-        'ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots INT DEFAULT 0',
-        'ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits INT DEFAULT 0',
-    ];
-
-    $classColumns = [
-        'classes_mask INT DEFAULT 0',
-        'shots_scout INT DEFAULT 0',
-        'hits_scout INT DEFAULT 0',
-        'shots_sniper INT DEFAULT 0',
-        'hits_sniper INT DEFAULT 0',
-        'shots_soldier INT DEFAULT 0',
-        'hits_soldier INT DEFAULT 0',
-        'shots_demoman INT DEFAULT 0',
-        'hits_demoman INT DEFAULT 0',
-        'shots_medic INT DEFAULT 0',
-        'hits_medic INT DEFAULT 0',
-        'shots_heavy INT DEFAULT 0',
-        'hits_heavy INT DEFAULT 0',
-        'shots_pyro INT DEFAULT 0',
-        'hits_pyro INT DEFAULT 0',
-        'shots_spy INT DEFAULT 0',
-        'hits_spy INT DEFAULT 0',
-        'shots_engineer INT DEFAULT 0',
-        'hits_engineer INT DEFAULT 0',
-    ];
-
-    foreach ($classColumns as $column) {
-        $queries[] = sprintf('ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS %s', $column);
-        $queries[] = sprintf('ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS %s', $column);
-        $queries[] = sprintf('ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS %s', $column);
-    }
-
-    foreach (WT_CLASS_METADATA as $meta) {
-        $queries[] = sprintf(
-            'ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_%s INT DEFAULT 0',
-            $meta['slug']
-        );
-        $queries[] = sprintf(
-            'ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_%s INT DEFAULT 0',
-            $meta['slug']
-        );
-    }
-
-    foreach ($queries as $sql) {
-        try {
-            $pdo->exec($sql);
-        } catch (Throwable $e) {
-            // ignore - older MySQL may not support IF NOT EXISTS; best effort
+    try {
+        $stmt = $pdo->query('SELECT COALESCE(MAX(version), 0) FROM whaletracker_schema_migrations');
+        $version = (int)($stmt ? $stmt->fetchColumn() : 0);
+        if ($version < WT_WHALETRACKER_SCHEMA_VERSION) {
+            error_log(sprintf(
+                'WhaleTracker schema not ready: have %d need %d',
+                $version,
+                WT_WHALETRACKER_SCHEMA_VERSION
+            ));
         }
+    } catch (Throwable $e) {
+        error_log('WhaleTracker schema check failed: ' . $e->getMessage());
     }
-    $ensured = true;
+
+    $checked = true;
 }
 
 function wt_fetch_all_stats(): array

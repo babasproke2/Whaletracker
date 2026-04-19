@@ -1,14 +1,69 @@
 void WhaleTracker_MaybeMarkDatabaseReady()
 {
-    if (g_bDatabaseReady || !g_bAsyncDatabaseConnected || !g_bSyncDatabaseConnected || g_hDatabase == null || g_hSyncDatabase == null)
+    if (g_bDatabaseReady
+        || !g_bAsyncDatabaseConnected
+        || !g_bSyncDatabaseConnected
+        || !g_bSchemaReady
+        || g_hDatabase == null
+        || g_hSyncDatabase == null)
     {
         return;
     }
 
     g_bDatabaseConnectInFlight = false;
     g_bDatabaseReady = true;
-    ResetPointsCacheRefreshState();
+    PrintToServer("[WhaleTracker] Database ready schema=%d players=%d round=%d",
+        WHALETRACKER_SCHEMA_VERSION,
+        GetClientCount(false),
+        WhaleTracker_IsRoundRunning() ? 1 : 0);
     PumpSaveQueue();
+}
+
+void WhaleTracker_ScheduleSchemaReadyCheck(float delay)
+{
+    if (g_bShuttingDown || g_hDatabase == null || g_bSchemaReady)
+    {
+        return;
+    }
+
+    if (g_hSchemaRetryTimer != null)
+    {
+        return;
+    }
+
+    g_hSchemaRetryTimer = CreateTimer(delay, WhaleTracker_SchemaReadyTimer);
+}
+
+public Action WhaleTracker_SchemaReadyTimer(Handle timer, any data)
+{
+    if (timer == g_hSchemaRetryTimer)
+    {
+        g_hSchemaRetryTimer = null;
+    }
+
+    if (!g_bShuttingDown)
+    {
+        WhaleTracker_RequestSchemaReadyCheck();
+    }
+    return Plugin_Stop;
+}
+
+void WhaleTracker_RequestSchemaReadyCheck()
+{
+    if (g_bDatabaseReady
+        || g_bSchemaReady
+        || g_bSchemaCheckInFlight
+        || !g_bAsyncDatabaseConnected
+        || !g_bSyncDatabaseConnected
+        || g_hDatabase == null
+        || g_hSyncDatabase == null)
+    {
+        return;
+    }
+
+    g_bSchemaCheckInFlight = true;
+    g_hDatabase.Query(WhaleTracker_SchemaVersionCallback,
+        "SELECT COALESCE(MAX(version), 0) FROM whaletracker_schema_migrations");
 }
 
 public void WhaleTracker_SQLConnect()
@@ -17,6 +72,12 @@ public void WhaleTracker_SQLConnect()
     {
         CloseHandle(g_hReconnectTimer);
         g_hReconnectTimer = null;
+    }
+
+    if (g_hSchemaRetryTimer != null)
+    {
+        CloseHandle(g_hSchemaRetryTimer);
+        g_hSchemaRetryTimer = null;
     }
 
     if (g_hDatabase != null)
@@ -35,7 +96,8 @@ public void WhaleTracker_SQLConnect()
     g_bAsyncDatabaseConnected = false;
     g_bSyncDatabaseConnected = false;
     g_bDatabaseConnectInFlight = true;
-    g_bPointsCacheSchemaReady = false;
+    g_bSchemaReady = false;
+    g_bSchemaCheckInFlight = false;
     g_CvarDatabase.GetString(g_sDatabaseConfig, sizeof(g_sDatabaseConfig));
     g_bShuttingDown = false;
     Database.Connect(T_SQLConnect, g_sDatabaseConfig);
@@ -61,192 +123,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     {
         LogError("[WhaleTracker] Failed to set database charset to utf8mb4, names may be truncated.");
     }
-
-    char query[4096];
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker` ("
-        ... "`steamid` VARCHAR(32) PRIMARY KEY,"
-        ... "`first_seen` INTEGER,"
-        ... "`kills` INTEGER DEFAULT 0,"
-        ... "`deaths` INTEGER DEFAULT 0,"
-        ... "`healing` INTEGER DEFAULT 0,"
-        ... "`total_ubers` INTEGER DEFAULT 0,"
-        ... "`medic_drops` INTEGER DEFAULT 0,"
-        ... "`uber_drops` INTEGER DEFAULT 0,"
-        ... "`airshots` INTEGER DEFAULT 0,"
-        ... "`bonusPoints` INTEGER DEFAULT 0,"
-        ... "`medicKills` INTEGER DEFAULT 0,"
-        ... "`heavyKills` INTEGER DEFAULT 0,"
-        ... "`marketGardenHits` INTEGER DEFAULT 0,"
-        ... "`headshots` INTEGER DEFAULT 0,"
-        ... "`backstabs` INTEGER DEFAULT 0,"
-        ... "`best_killstreak` INTEGER DEFAULT 0,"
-        ... "`assists` INTEGER DEFAULT 0,"
-        ... "`playtime` INTEGER DEFAULT 0,"
-        ... "`damage_dealt` INTEGER DEFAULT 0,"
-        ... "`damage_taken` INTEGER DEFAULT 0,"
-        ... "`favorite_class` TINYINT DEFAULT 0,"
-        ... "`shots_scatterguns` INTEGER DEFAULT 0,"
-        ... "`hits_scatterguns` INTEGER DEFAULT 0,"
-        ... "`shots_pistols` INTEGER DEFAULT 0,"
-        ... "`hits_pistols` INTEGER DEFAULT 0,"
-        ... "`shots_rocketlaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_rocketlaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_grenadelaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_grenadelaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_stickylaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_stickylaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_snipers` INTEGER DEFAULT 0,"
-        ... "`hits_snipers` INTEGER DEFAULT 0,"
-        ... "`shots_revolvers` INTEGER DEFAULT 0,"
-        ... "`hits_revolvers` INTEGER DEFAULT 0"
-        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    g_hDatabase.Query(WhaleTracker_CreateTable, query);
-
-    Format(query, sizeof(query), "CREATE INDEX IF NOT EXISTS `idx_last_seen` ON `whaletracker` (`last_seen`)");
-    g_hDatabase.Query(WhaleTracker_CreateTable, query);
-
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker_online` ("
-        ... "`steamid` VARCHAR(32) PRIMARY KEY,"
-        ... "`personaname` VARCHAR(128) DEFAULT '',"
-        ... "`class` TINYINT DEFAULT 0,"
-        ... "`team` TINYINT DEFAULT 0,"
-        ... "`alive` TINYINT DEFAULT 0,"
-        ... "`is_spectator` TINYINT DEFAULT 0,"
-        ... "`kills` INTEGER DEFAULT 0,"
-        ... "`deaths` INTEGER DEFAULT 0,"
-        ... "`assists` INTEGER DEFAULT 0,"
-        ... "`damage` INTEGER DEFAULT 0,"
-        ... "`damage_taken` INTEGER DEFAULT 0,"
-        ... "`healing` INTEGER DEFAULT 0,"
-        ... "`headshots` INTEGER DEFAULT 0,"
-        ... "`backstabs` INTEGER DEFAULT 0,"
-        ... "`medic_drops` INTEGER DEFAULT 0,"
-        ... "`uber_drops` INTEGER DEFAULT 0,"
-        ... "`airshots` INTEGER DEFAULT 0,"
-        ... "`marketGardenHits` INTEGER DEFAULT 0,"
-        ... "`playtime` INTEGER DEFAULT 0,"
-        ... "`total_ubers` INTEGER DEFAULT 0,"
-        ... "`best_streak` INTEGER DEFAULT 0,"
-        ... "`best_ubers_life` INTEGER DEFAULT 0,"
-        ... "`current_killstreak` INTEGER DEFAULT 0,"
-        ... "`current_ubers_life` INTEGER DEFAULT 0,"
-        ... "`visible_max` INTEGER DEFAULT 0,"
-        ... "`time_connected` INTEGER DEFAULT 0,"
-        ... "`classes_mask` INTEGER DEFAULT 0,"
-        ... "`shots_shotguns` INTEGER DEFAULT 0,"
-        ... "`hits_shotguns` INTEGER DEFAULT 0,"
-        ... "`shots_scatterguns` INTEGER DEFAULT 0,"
-        ... "`hits_scatterguns` INTEGER DEFAULT 0,"
-        ... "`shots_pistols` INTEGER DEFAULT 0,"
-        ... "`hits_pistols` INTEGER DEFAULT 0,"
-        ... "`shots_rocketlaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_rocketlaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_grenadelaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_grenadelaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_stickylaunchers` INTEGER DEFAULT 0,"
-        ... "`hits_stickylaunchers` INTEGER DEFAULT 0,"
-        ... "`shots_snipers` INTEGER DEFAULT 0,"
-        ... "`hits_snipers` INTEGER DEFAULT 0,"
-        ... "`shots_revolvers` INTEGER DEFAULT 0,"
-        ... "`hits_revolvers` INTEGER DEFAULT 0,"
-        ... "`host_ip` VARCHAR(64) DEFAULT '',"
-        ... "`host_port` INTEGER DEFAULT 0,"
-        ... "`playercount` INTEGER DEFAULT 0,"
-        ... "`map_name` VARCHAR(128) DEFAULT '',"
-        ... "`last_update` INTEGER DEFAULT 0"
-        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    g_hDatabase.Query(WhaleTracker_CreateOnlineTable, query);
-
-        Format(query, sizeof(query),
-            "CREATE TABLE IF NOT EXISTS `whaletracker_servers` ("
-            ... "`ip` VARCHAR(64) NOT NULL,"
-            ... "`port` INTEGER NOT NULL,"
-            ... "`playercount` INTEGER DEFAULT 0,"
-            ... "`visible_max` INTEGER DEFAULT 0,"
-            ... "`game` VARCHAR(64) DEFAULT '',"
-            ... "`game_url` VARCHAR(32) DEFAULT '',"
-            ... "`map` VARCHAR(128) DEFAULT '',"
-            ... "`city` VARCHAR(128) DEFAULT '',"
-            ... "`country` VARCHAR(8) DEFAULT '',"
-            ... "`flags` VARCHAR(256) DEFAULT '',"
-            ... "`last_update` INTEGER DEFAULT 0,"
-            ... "PRIMARY KEY (`ip`, `port`)"
-            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    g_hDatabase.Query(WhaleTracker_CreateServersTable, query);
-
-    if (WhaleTracker_ShouldUseMatchLogs())
-    {
-        Format(query, sizeof(query),
-            "CREATE TABLE IF NOT EXISTS `whaletracker_logs` ("
-            ... "`log_id` VARCHAR(64) PRIMARY KEY,"
-            ... "`map` VARCHAR(64) DEFAULT '',"
-            ... "`gamemode` VARCHAR(64) DEFAULT 'Unknown',"
-            ... "`started_at` INTEGER DEFAULT 0,"
-            ... "`ended_at` INTEGER DEFAULT 0,"
-            ... "`duration` INTEGER DEFAULT 0,"
-            ... "`player_count` INTEGER DEFAULT 0,"
-            ... "`created_at` INTEGER DEFAULT 0,"
-            ... "`updated_at` INTEGER DEFAULT 0"
-            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        g_hDatabase.Query(WhaleTracker_CreateLogsTable, query);
-
-        Format(query, sizeof(query),
-            "CREATE TABLE IF NOT EXISTS `whaletracker_log_players` ("
-            ... "`log_id` VARCHAR(64) NOT NULL,"
-            ... "`steamid` VARCHAR(32) NOT NULL,"
-            ... "`personaname` VARCHAR(128) DEFAULT '',"
-            ... "`kills` INTEGER DEFAULT 0,"
-            ... "`deaths` INTEGER DEFAULT 0,"
-            ... "`assists` INTEGER DEFAULT 0,"
-            ... "`damage` INTEGER DEFAULT 0,"
-            ... "`damage_taken` INTEGER DEFAULT 0,"
-            ... "`healing` INTEGER DEFAULT 0,"
-            ... "`headshots` INTEGER DEFAULT 0,"
-            ... "`backstabs` INTEGER DEFAULT 0,"
-            ... "`total_ubers` INTEGER DEFAULT 0,"
-            ... "`playtime` INTEGER DEFAULT 0,"
-            ... "`medic_drops` INTEGER DEFAULT 0,"
-            ... "`uber_drops` INTEGER DEFAULT 0,"
-            ... "`airshots` INTEGER DEFAULT 0,"
-            ... "`shots_shotguns` INTEGER DEFAULT 0,"
-            ... "`hits_shotguns` INTEGER DEFAULT 0,"
-            ... "`shots_scatterguns` INTEGER DEFAULT 0,"
-            ... "`hits_scatterguns` INTEGER DEFAULT 0,"
-            ... "`shots_pistols` INTEGER DEFAULT 0,"
-            ... "`hits_pistols` INTEGER DEFAULT 0,"
-            ... "`shots_rocketlaunchers` INTEGER DEFAULT 0,"
-            ... "`hits_rocketlaunchers` INTEGER DEFAULT 0,"
-            ... "`shots_grenadelaunchers` INTEGER DEFAULT 0,"
-            ... "`hits_grenadelaunchers` INTEGER DEFAULT 0,"
-            ... "`shots_stickylaunchers` INTEGER DEFAULT 0,"
-            ... "`hits_stickylaunchers` INTEGER DEFAULT 0,"
-            ... "`shots_snipers` INTEGER DEFAULT 0,"
-            ... "`hits_snipers` INTEGER DEFAULT 0,"
-            ... "`shots_revolvers` INTEGER DEFAULT 0,"
-            ... "`hits_revolvers` INTEGER DEFAULT 0,"
-            ... "`best_streak` INTEGER DEFAULT 0,"
-            ... "`last_updated` INTEGER DEFAULT 0,"
-            ... "PRIMARY KEY (`log_id`, `steamid`)"
-            ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        g_hDatabase.Query(WhaleTracker_CreateLogPlayersTable, query);
-    }
-
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS `whaletracker_points_cache` ("
-        ... "`steamid` VARCHAR(32) PRIMARY KEY,"
-        ... "`points` INTEGER DEFAULT 0,"
-        ... "`rank` INTEGER DEFAULT 0,"
-        ... "`name` VARCHAR(128) DEFAULT '',"
-        ... "`name_color` VARCHAR(32) DEFAULT '',"
-        ... "`prename` VARCHAR(64) DEFAULT '',"
-        ... "`updated_at` INTEGER DEFAULT 0"
-        ... ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    g_hDatabase.Query(WhaleTracker_CreatePointsCacheTable, query);
-
-    g_hDatabase.Query(WhaleTracker_CreateTable, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
-    WhaleTracker_MaybeMarkDatabaseReady();
+    WhaleTracker_RequestSchemaReadyCheck();
 }
 
 public void T_SQLSyncConnect(Database db, const char[] error, any data)
@@ -274,306 +151,51 @@ public void T_SQLSyncConnect(Database db, const char[] error, any data)
         LogError("[WhaleTracker] Failed to set sync database charset to utf8mb4.");
     }
 
-    WhaleTracker_MaybeMarkDatabaseReady();
+    WhaleTracker_RequestSchemaReadyCheck();
 }
 
-public void WhaleTracker_CreateTable(Database db, DBResultSet results, const char[] error, any data)
+public void WhaleTracker_SchemaVersionCallback(Database db, DBResultSet results, const char[] error, any data)
 {
     if (error[0] != '\0')
     {
-        LogError("[WhaleTracker] Failed to create table: %s", error);
-    }
-
-    PumpSaveQueue();
-
-    static const char alterQueries[][256] =
-    {
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_dealt INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS favorite_class TINYINT DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS bonusPoints INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS medicKills INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS heavyKills INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS last_seen INTEGER DEFAULT 0",
-
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS shots_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS hits_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker ADD COLUMN IF NOT EXISTS sort_weight DOUBLE AS (CASE WHEN playtime >= 14400 THEN (kills + (0.5 * assists)) / GREATEST(deaths, 1) ELSE -1 END) STORED",
-        "CREATE INDEX IF NOT EXISTS idx_sort_weight ON whaletracker (sort_weight DESC, kills DESC)"
-    };
-
-    for (int i = 0; i < sizeof(alterQueries); i++)
-    {
-        g_hDatabase.Query(WhaleTracker_AlterCallback, alterQueries[i]);
-    }
-
-    static const char charsetQueries[][96] =
-    {
-        "ALTER TABLE whaletracker CONVERT TO CHARACTER SET utf8mb4",
-        "ALTER TABLE whaletracker_online CONVERT TO CHARACTER SET utf8mb4",
-        "ALTER TABLE whaletracker_servers CONVERT TO CHARACTER SET utf8mb4",
-        "ALTER TABLE whaletracker_points_cache CONVERT TO CHARACTER SET utf8mb4"
-    };
-
-    for (int i = 0; i < sizeof(charsetQueries); i++)
-    {
-        g_hDatabase.Query(WhaleTracker_AlterCallback, charsetQueries[i]);
-    }
-
-    static const char alterOnlineQueries[][160] =
-    {
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS personaname VARCHAR(128) DEFAULT ''",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS class TINYINT DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS team TINYINT DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS alive TINYINT DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS is_spectator TINYINT DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS kills INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS deaths INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS assists INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS damage INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS healing INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS headshots INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS backstabs INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS medic_drops INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS airshots INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS playtime INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS best_ubers_life INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS current_killstreak INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS current_ubers_life INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS visible_max INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS time_connected INTEGER DEFAULT 0",
-
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS shots_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS hits_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS host_ip VARCHAR(64) DEFAULT ''",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS host_port INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS playercount INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS map_name VARCHAR(128) DEFAULT ''",
-        "ALTER TABLE whaletracker_online ADD COLUMN IF NOT EXISTS last_update INTEGER DEFAULT 0"
-    };
-
-    for (int i = 0; i < sizeof(alterOnlineQueries); i++)
-    {
-        g_hDatabase.Query(WhaleTracker_AlterCallback, alterOnlineQueries[i]);
-    }
-
-    static const char alterOnlineMetaQueries[][160] =
-    {
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS host_ip VARCHAR(64) DEFAULT ''",
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS host_port INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS map_name VARCHAR(128) DEFAULT ''",
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS playercount INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS visible_max INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_online_meta ADD COLUMN IF NOT EXISTS updated_at INTEGER DEFAULT 0"
-    };
-
-    for (int i = 0; i < sizeof(alterOnlineMetaQueries); i++)
-    {
-        g_hDatabase.Query(WhaleTracker_AlterCallback, alterOnlineMetaQueries[i]);
-    }
-
-    static const char alterLogsQueries[][160] =
-    {
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS map VARCHAR(64) DEFAULT ''",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS gamemode VARCHAR(64) DEFAULT 'Unknown'",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS started_at INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS ended_at INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS player_count INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS created_at INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_logs ADD COLUMN IF NOT EXISTS updated_at INTEGER DEFAULT 0"
-    };
-
-    if (WhaleTracker_ShouldUseMatchLogs())
-    {
-        for (int i = 0; i < sizeof(alterLogsQueries); i++)
+        g_bSchemaCheckInFlight = false;
+        LogError("[WhaleTracker] Failed to verify schema version: %s", error);
+        if (WhaleTracker_IsConnectionLostError(error))
         {
-            g_hDatabase.Query(WhaleTracker_AlterCallback, alterLogsQueries[i]);
+            WhaleTracker_ScheduleReconnect(5.0);
         }
-
-        static const char charsetLogsQueries[][96] =
+        else
         {
-            "ALTER TABLE whaletracker_logs CONVERT TO CHARACTER SET utf8mb4",
-            "ALTER TABLE whaletracker_log_players CONVERT TO CHARACTER SET utf8mb4"
-        };
-
-        for (int i = 0; i < sizeof(charsetLogsQueries); i++)
-        {
-            g_hDatabase.Query(WhaleTracker_AlterCallback, charsetLogsQueries[i]);
+            WhaleTracker_ScheduleSchemaReadyCheck(2.0);
         }
+        return;
     }
 
-    static const char alterLogPlayersQueries[][192] =
-    {
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS personaname VARCHAR(128) DEFAULT ''",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS kills INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS deaths INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS assists INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS damage INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS damage_taken INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS healing INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS headshots INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS backstabs INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS total_ubers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS playtime INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS medic_drops INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS uber_drops INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS airshots INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS marketGardenHits INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_shotguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_scatterguns INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_pistols INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_rocketlaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_grenadelaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_stickylaunchers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_snipers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS shots_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS hits_revolvers INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS best_streak INTEGER DEFAULT 0",
-        "ALTER TABLE whaletracker_log_players ADD COLUMN IF NOT EXISTS last_updated INTEGER DEFAULT 0"
-    };
+    g_bSchemaCheckInFlight = false;
 
-    if (WhaleTracker_ShouldUseMatchLogs())
+    int version = 0;
+    if (results != null && results.FetchRow())
     {
-        for (int i = 0; i < sizeof(alterLogPlayersQueries); i++)
-        {
-            g_hDatabase.Query(WhaleTracker_AlterCallback, alterLogPlayersQueries[i]);
-        }
+        version = results.FetchInt(0);
     }
 
-    static const char alterServersQueries[][160] =
+    if (version < WHALETRACKER_SCHEMA_VERSION)
     {
-        "ALTER TABLE whaletracker_servers ADD COLUMN IF NOT EXISTS city VARCHAR(128) DEFAULT ''",
-        "ALTER TABLE whaletracker_servers ADD COLUMN IF NOT EXISTS country VARCHAR(8) DEFAULT ''",
-        "ALTER TABLE whaletracker_servers ADD COLUMN IF NOT EXISTS flags VARCHAR(256) DEFAULT ''",
-        "ALTER TABLE whaletracker_servers ADD COLUMN IF NOT EXISTS game VARCHAR(64) DEFAULT ''",
-        "ALTER TABLE whaletracker_servers ADD COLUMN IF NOT EXISTS game_url VARCHAR(32) DEFAULT ''"
-    };
-
-    for (int i = 0; i < sizeof(alterServersQueries); i++)
-    {
-        g_hDatabase.Query(WhaleTracker_AlterCallback, alterServersQueries[i]);
+        WhaleTracker_ScheduleSchemaReadyCheck(2.0);
+        return;
     }
+
+    g_bSchemaReady = true;
+    WhaleTracker_MaybeMarkDatabaseReady();
 
     for (int i = 1; i <= MaxClients; i++)
     {
         if (!IsClientInGame(i) || IsFakeClient(i))
+        {
             continue;
+        }
 
         RequestClientStateLoads(i);
-    }
-}
-
-public void WhaleTracker_CreateOnlineTable(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to create online table: %s", error);
-    }
-}
-
-public void WhaleTracker_CreateLogsTable(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to create logs table: %s", error);
-    }
-}
-
-public void WhaleTracker_CreateServersTable(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to create servers table: %s", error);
-    }
-}
-public void WhaleTracker_CreateLogPlayersTable(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to create log players table: %s", error);
-    }
-}
-
-public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to create points cache table: %s", error);
-        return;
-    }
-
-    g_bPointsCacheSchemaReady = true;
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "CREATE TABLE IF NOT EXISTS whaletracker_points_cache_build LIKE whaletracker_points_cache");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS name_color VARCHAR(32) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS name VARCHAR(128) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS prename VARCHAR(64) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache ADD COLUMN IF NOT EXISTS rank INTEGER DEFAULT 0");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS name_color VARCHAR(32) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS name VARCHAR(128) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS prename VARCHAR(64) DEFAULT ''");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache_build ADD COLUMN IF NOT EXISTS rank INTEGER DEFAULT 0");
-    g_hDatabase.Query(WhaleTracker_AlterCallback,
-        "ALTER TABLE whaletracker_points_cache_build CONVERT TO CHARACTER SET utf8mb4");
-
-}
-
-public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const char[] error, any data)
-{
-    if (error[0] != '\0')
-    {
-        LogError("[WhaleTracker] Failed to alter table: %s", error);
     }
 }
 

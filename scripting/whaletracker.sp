@@ -30,6 +30,7 @@
 #define WT_MARKET_GARDENER_DEF_INDEX 416
 #define WT_HANDSHAKE_DEF_INDEX 609
 #define WT_AIRSHOT_MIN_HEIGHT 90.0
+#define WHALETRACKER_SCHEMA_VERSION 2
 #define TF_CLASS_HEAVY          6
 #define TF_CLASS_MEDIC          5
 
@@ -96,7 +97,6 @@ enum WeaponCategory
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
 void RequestClientStateLoads(int client);
 int GetWhalePointsForClient(int client);
-public void RequestWhalePointsCacheRefreshWithReason(const char[] reason);
 public void QueueRoundMvpSelection();
 Database GetSyncDatabaseHandle();
 DBResultSet SQLQuerySync(const char[] query);
@@ -162,12 +162,12 @@ ConVar g_hGameName = null;
 ConVar g_hGameUrl = null;
 ConVar g_hEnableMatchLogs = null;
 ConVar g_hDeferredSavePump = null;
-ConVar g_hPointsCacheWriterPort = null;
 bool g_bDatabaseReady = false;
 bool g_bAsyncDatabaseConnected = false;
 bool g_bSyncDatabaseConnected = false;
 bool g_bDatabaseConnectInFlight = false;
-bool g_bPointsCacheSchemaReady = false;
+bool g_bSchemaReady = false;
+bool g_bSchemaCheckInFlight = false;
 
 enum MatchStatField
 {
@@ -240,11 +240,9 @@ int g_PendingSaveQueries = 0;
 bool g_bShuttingDown = false;
 Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
+Handle g_hSchemaRetryTimer = null;
 Handle g_hSavePumpTimer = null;
 Handle g_hAirshotForward = null;
-bool g_bPointsCacheRefreshInFlight = false;
-int g_iPointsCacheRefreshSerial = 0;
-char g_sPointsCacheRefreshReason[128];
 
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];

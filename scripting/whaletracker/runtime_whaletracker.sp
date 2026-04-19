@@ -7,47 +7,6 @@ public Plugin myinfo =
     url = "https://kogasa.tf"
 };
 
-bool WhaleTracker_IsPointsCacheWriter()
-{
-    if (g_iHostPort <= 0)
-    {
-        RefreshHostAddress();
-    }
-
-    int writerPort = (g_hPointsCacheWriterPort != null) ? g_hPointsCacheWriterPort.IntValue : 27015;
-    return (writerPort > 0 && g_iHostPort == writerPort);
-}
-
-void ResetPointsCacheRefreshState()
-{
-    g_bPointsCacheRefreshInFlight = false;
-    g_iPointsCacheRefreshSerial++;
-    g_sPointsCacheRefreshReason[0] = '\0';
-}
-
-public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
-{
-    char effectiveReason[128];
-    strcopy(effectiveReason, sizeof(effectiveReason), reason[0] ? reason : "unspecified");
-
-    if (!g_bDatabaseReady || g_hDatabase == null || !g_bPointsCacheSchemaReady || !WhaleTracker_IsPointsCacheWriter())
-    {
-        return;
-    }
-
-    if (g_bPointsCacheRefreshInFlight)
-    {
-        return;
-    }
-
-    strcopy(g_sPointsCacheRefreshReason, sizeof(g_sPointsCacheRefreshReason), effectiveReason);
-    PrintToServer("[WhaleTracker] Points cache refresh start reason=%s players=%d round=%d",
-        effectiveReason,
-        GetClientCount(false),
-        WhaleTracker_IsRoundRunning() ? 1 : 0);
-    RefreshWhalePointsCacheAll();
-}
-
 public Database GetSyncDatabaseHandle()
 {
     return g_hSyncDatabase;
@@ -129,14 +88,6 @@ public void OnPluginStart()
         FCVAR_NONE,
         true,
         0.0,
-        true,
-        1.0
-    );
-    g_hPointsCacheWriterPort = CreateConVar(
-        "sm_whaletracker_points_cache_writer_port",
-        "27015",
-        "Host port of the single WhaleTracker server allowed to rebuild the points cache.",
-        FCVAR_NONE,
         true,
         1.0
     );
@@ -245,7 +196,6 @@ public void OnMapStart()
     RefreshCurrentOnlineMapName();
     RefreshHostAddress();
     ClearOnlineStats();
-    ResetPointsCacheRefreshState();
     g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
@@ -267,7 +217,6 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
-    ResetPointsCacheRefreshState();
     g_hRoundMvpTimer = null;
 
     for (int i = 1; i <= MaxClients; i++)
@@ -364,6 +313,7 @@ public void OnPluginEnd()
     g_hPeriodicSaveTimer = null;
     g_hRoundMvpTimer = null;
     g_hReconnectTimer = null;
+    g_hSchemaRetryTimer = null;
     g_hSavePumpTimer = null;
 
     if (g_hAirshotForward != null)
@@ -400,6 +350,8 @@ public void OnPluginEnd()
     g_bAsyncDatabaseConnected = false;
     g_bSyncDatabaseConnected = false;
     g_bDatabaseConnectInFlight = false;
+    g_bSchemaReady = false;
+    g_bSchemaCheckInFlight = false;
     g_hVisibleMaxPlayers = null;
 
     for (int i = 1; i <= MaxClients; i++)
