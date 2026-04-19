@@ -34,6 +34,7 @@
 #define TF_CLASS_MEDIC          5
 
 native int Filters_GetChatName(int client, char[] buffer, int maxlen);
+native int Filters_GetSteamIdColorTag(const char[] steamId, char[] buffer, int maxlen);
 native bool SaySounds_PlayCommand(int client, const char[] commandName, bool ignoreOptIn = false);
 forward bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync);
 forward void WhaleTracker_RustInit();
@@ -46,6 +47,7 @@ public APLRes AskPluginLoad2(Handle self, bool late, char[] error, int err_max)
     MarkNativeAsOptional("SDKUnhook");
     MarkNativeAsOptional("SteamWorks_GetPublicIP");
     MarkNativeAsOptional("Filters_GetChatName");
+    MarkNativeAsOptional("Filters_GetSteamIdColorTag");
     MarkNativeAsOptional("SaySounds_PlayCommand");
     RegPluginLibrary("whaletracker");
     CreateNative("WhaleTracker_GetCumulativeKills", Native_WhaleTracker_GetCumulativeKills);
@@ -91,15 +93,6 @@ enum WeaponCategory
 }
 #define WEAPON_CATEGORY_COUNT 8
 #define WHALE_POINTS_CACHE_DB_LOCK "whaletracker_points_cache_refresh"
-
-enum ClientPointsCacheState
-{
-    ClientPointsCacheState_Unknown = 0,
-    ClientPointsCacheState_Pending,
-    ClientPointsCacheState_Ready,
-    ClientPointsCacheState_Missing,
-    ClientPointsCacheState_Error
-}
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
 void RequestClientStateLoads(int client);
@@ -171,6 +164,9 @@ ConVar g_hGameUrl = null;
 ConVar g_hEnableMatchLogs = null;
 ConVar g_hDeferredSavePump = null;
 bool g_bDatabaseReady = false;
+bool g_bAsyncDatabaseConnected = false;
+bool g_bSyncDatabaseConnected = false;
+bool g_bDatabaseConnectInFlight = false;
 
 enum MatchStatField
 {
@@ -255,9 +251,6 @@ char g_sPointsCacheRefreshReason[128];
 char g_sQueuedPointsCacheRefreshReason[128];
 char g_sPointsCacheWarmupReason[128];
 
-ClientPointsCacheState g_eClientPointsCacheState[MAXPLAYERS + 1];
-char g_sClientCachedColor[MAXPLAYERS + 1][32];
-bool g_bRoundMvp[MAXPLAYERS + 1];
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
 Handle g_hRoundMvpTimer = null;

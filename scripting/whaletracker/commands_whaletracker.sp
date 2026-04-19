@@ -779,9 +779,6 @@ void ResetClientCommandCaches(int client)
         return;
     }
 
-    g_eClientPointsCacheState[client] = ClientPointsCacheState_Unknown;
-    g_sClientCachedColor[client][0] = '\0';
-
     g_bFavoriteClassLoaded[client] = false;
     g_bFavoriteClassPending[client] = false;
     g_iFavoriteClassCache[client] = CLASS_UNKNOWN;
@@ -893,6 +890,29 @@ bool GetSteamIdRecordedName(const char[] steamId, char[] buffer, int maxlen)
 
     delete results;
     return found;
+}
+
+bool TryGetFiltersSteamIdColorTag(const char[] steamId, char[] colorTag, int maxlen)
+{
+    colorTag[0] = '\0';
+
+    if (steamId[0] == '\0')
+    {
+        return false;
+    }
+
+    if (GetFeatureStatus(FeatureType_Native, "Filters_GetSteamIdColorTag") != FeatureStatus_Available)
+    {
+        return false;
+    }
+
+    if (!Filters_GetSteamIdColorTag(steamId, colorTag, maxlen))
+    {
+        return false;
+    }
+
+    TrimString(colorTag);
+    return (colorTag[0] != '\0');
 }
 
 bool GetSteamIdColoredDisplayName(const char[] steamId, char[] buffer, int maxlen)
@@ -1193,6 +1213,11 @@ void GetNameColorTagForSteamId(const char[] steamId, char[] colorTag, int maxlen
         return;
     }
 
+    if (TryGetFiltersSteamIdColorTag(steamId, colorTag, maxlen))
+    {
+        return;
+    }
+
     char escapedSteamId[STEAMID64_LEN * 2];
     EscapeSqlString(steamId, escapedSteamId, sizeof(escapedSteamId));
 
@@ -1338,16 +1363,6 @@ void FinishWhalePointsCacheRefresh(bool success)
 
     if (success)
     {
-        for (int i = 1; i <= MaxClients; i++)
-        {
-            if (!IsClientConnected(i) || IsFakeClient(i))
-            {
-                continue;
-            }
-
-            RequestClientPointsCacheQuery(i);
-        }
-
         PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table. reason=%s rerun=%d queued_reason=%s players=%d round=%d",
             activeReason,
             rerun ? 1 : 0,
@@ -1584,9 +1599,15 @@ void GetClientFiltersNameColorTag(int client, char[] colorTag, int maxlen)
         return;
     }
 
-    if (g_eClientPointsCacheState[client] == ClientPointsCacheState_Ready && g_sClientCachedColor[client][0] != '\0')
+    EnsureClientSteamId(client);
+    if (g_Stats[client].steamId[0] == '\0')
     {
-        strcopy(colorTag, maxlen, g_sClientCachedColor[client]);
+        return;
+    }
+
+    if (TryGetFiltersSteamIdColorTag(g_Stats[client].steamId, colorTag, maxlen))
+    {
+        return;
     }
 }
 

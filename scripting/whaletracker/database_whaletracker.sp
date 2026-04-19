@@ -1,3 +1,17 @@
+void WhaleTracker_MaybeMarkDatabaseReady()
+{
+    if (g_bDatabaseReady || !g_bAsyncDatabaseConnected || !g_bSyncDatabaseConnected || g_hDatabase == null || g_hSyncDatabase == null)
+    {
+        return;
+    }
+
+    g_bDatabaseConnectInFlight = false;
+    g_bDatabaseReady = true;
+    ResetPointsCacheRefreshState();
+    SchedulePointsCacheWarmupWithReason(1.0, "db_connect");
+    PumpSaveQueue();
+}
+
 public void WhaleTracker_SQLConnect()
 {
     if (g_hReconnectTimer != null)
@@ -19,6 +33,9 @@ public void WhaleTracker_SQLConnect()
     }
 
     g_bDatabaseReady = false;
+    g_bAsyncDatabaseConnected = false;
+    g_bSyncDatabaseConnected = false;
+    g_bDatabaseConnectInFlight = true;
     g_CvarDatabase.GetString(g_sDatabaseConfig, sizeof(g_sDatabaseConfig));
     g_bShuttingDown = false;
     Database.Connect(T_SQLConnect, g_sDatabaseConfig);
@@ -31,14 +48,14 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     {
         LogError("[WhaleTracker] Database connection failed: %s", error);
         g_bDatabaseReady = false;
+        g_bAsyncDatabaseConnected = false;
+        g_bDatabaseConnectInFlight = false;
         WhaleTracker_ScheduleReconnect(5.0);
         return;
     }
 
     g_hDatabase = db;
-    g_bDatabaseReady = true;
-    ResetPointsCacheRefreshState();
-    SchedulePointsCacheWarmupWithReason(1.0, "db_connect");
+    g_bAsyncDatabaseConnected = true;
 
     if (!g_hDatabase.SetCharset("utf8mb4"))
     {
@@ -229,6 +246,7 @@ public void T_SQLConnect(Database db, const char[] error, any data)
     g_hDatabase.Query(WhaleTracker_CreatePointsCacheTable, query);
 
     g_hDatabase.Query(WhaleTracker_CreateTable, "DROP TABLE IF EXISTS `whaletracker_mapstats`");
+    WhaleTracker_MaybeMarkDatabaseReady();
 }
 
 public void T_SQLSyncConnect(Database db, const char[] error, any data)
@@ -236,6 +254,9 @@ public void T_SQLSyncConnect(Database db, const char[] error, any data)
     if (db == null)
     {
         LogError("[WhaleTracker] Sync database connection failed: %s", error);
+        g_bSyncDatabaseConnected = false;
+        g_bDatabaseConnectInFlight = false;
+        WhaleTracker_ScheduleReconnect(5.0);
         return;
     }
 
@@ -246,11 +267,14 @@ public void T_SQLSyncConnect(Database db, const char[] error, any data)
     }
 
     g_hSyncDatabase = db;
+    g_bSyncDatabaseConnected = true;
 
     if (!g_hSyncDatabase.SetCharset("utf8mb4"))
     {
         LogError("[WhaleTracker] Failed to set sync database charset to utf8mb4.");
     }
+
+    WhaleTracker_MaybeMarkDatabaseReady();
 }
 
 public void WhaleTracker_CreateTable(Database db, DBResultSet results, const char[] error, any data)

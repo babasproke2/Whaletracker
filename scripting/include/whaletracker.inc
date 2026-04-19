@@ -487,6 +487,9 @@ void WhaleTracker_ScheduleReconnect(float delay)
     }
 
     g_bDatabaseReady = false;
+    g_bAsyncDatabaseConnected = false;
+    g_bSyncDatabaseConnected = false;
+    g_bDatabaseConnectInFlight = false;
     ResetPointsCacheRefreshState();
 
     if (g_hDatabase != null)
@@ -526,6 +529,11 @@ bool WhaleTracker_IsDatabaseHealthy()
 {
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
+        if (g_bDatabaseConnectInFlight)
+        {
+            return true;
+        }
+
         return false;
     }
 
@@ -1747,6 +1755,7 @@ void RunSaveQuerySync(const char[] query, int userId)
 {
     if (GetSyncDatabaseHandle() == null)
     {
+        WhaleTracker_ScheduleReconnect(1.0);
         return;
     }
 

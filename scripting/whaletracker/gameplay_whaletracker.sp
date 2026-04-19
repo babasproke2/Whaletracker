@@ -1,14 +1,6 @@
 bool g_bPlayerTakenDirectHit[MAXPLAYERS + 1];
 bool g_bInExplosiveJump[MAXPLAYERS + 1];
 
-void ClearRoundMvpFlags()
-{
-    for (int i = 1; i <= MaxClients; i++)
-    {
-        g_bRoundMvp[i] = false;
-    }
-}
-
 void ClearRoundMvpIdentity()
 {
     g_sRoundMvpSteamId[2][0] = '\0';
@@ -23,7 +15,6 @@ void ClearLastRoundMvpIdentity()
 
 void ClearCurrentRoundMvpState()
 {
-    ClearRoundMvpFlags();
     ClearRoundMvpIdentity();
 }
 
@@ -54,7 +45,6 @@ void ClearRoundMvpForTeam(int team)
             continue;
         }
 
-        RefreshClientRoundMvpFlag(i);
     }
 }
 
@@ -120,16 +110,6 @@ bool IsClientCurrentRoundMvp(int client)
     return StrEqual(g_Stats[client].steamId, g_sRoundMvpSteamId[team], false);
 }
 
-void RefreshClientRoundMvpFlag(int client)
-{
-    if (client <= 0 || client > MaxClients)
-    {
-        return;
-    }
-
-    g_bRoundMvp[client] = IsClientCurrentRoundMvp(client);
-}
-
 void AssignRoundMvp(int client, int team)
 {
     if (team != 2 && team != 3)
@@ -146,7 +126,6 @@ void AssignRoundMvp(int client, int team)
     ClearRoundMvpForTeam(team);
     strcopy(g_sRoundMvpSteamId[team], sizeof(g_sRoundMvpSteamId[]), g_Stats[client].steamId);
     MarkSteamIdAsMapMvp(g_Stats[client].steamId);
-    RefreshClientRoundMvpFlag(client);
 }
 
 bool HasSteamIdBeenMapMvp(const char[] steamId)
@@ -192,7 +171,7 @@ public void QueueRoundMvpSelection()
 
 void LoadRoundMvpCachedPoints(StringMap cachedPoints)
 {
-    if (cachedPoints == null || !g_bDatabaseReady || g_hDatabase == null)
+    if (cachedPoints == null || !g_bDatabaseReady || GetSyncDatabaseHandle() == null)
     {
         return;
     }
@@ -468,7 +447,6 @@ public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
     int oldTeam = event.GetInt("oldteam");
     int newTeam = event.GetInt("team");
     bool cleared = InvalidateClientRoundMvp(client, oldTeam);
-    RefreshClientRoundMvpFlag(client);
     if (WhaleTracker_IsRoundRunning() && (cleared || oldTeam != newTeam))
     {
         QueueRoundMvpSelection();
