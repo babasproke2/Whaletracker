@@ -23,53 +23,6 @@ void ResetPointsCacheRefreshState()
     g_bPointsCacheRefreshInFlight = false;
     g_iPointsCacheRefreshSerial++;
     g_sPointsCacheRefreshReason[0] = '\0';
-    if (g_hPointsCacheWarmupTimer == null)
-    {
-        g_sPointsCacheWarmupReason[0] = '\0';
-    }
-}
-
-void SchedulePointsCacheWarmupWithReason(float delay, const char[] reason)
-{
-    if (!g_bDatabaseReady || !g_bPointsCacheSchemaReady || !WhaleTracker_IsPointsCacheWriter())
-    {
-        return;
-    }
-
-    char effectiveReason[128];
-    strcopy(effectiveReason, sizeof(effectiveReason), reason[0] ? reason : "unspecified");
-
-    if (g_hPointsCacheWarmupTimer != null)
-    {
-        return;
-    }
-
-    strcopy(g_sPointsCacheWarmupReason, sizeof(g_sPointsCacheWarmupReason), effectiveReason);
-    PrintToServer("[WhaleTracker] Points cache warmup scheduled reason=%s delay=%.2f players=%d round=%d",
-        effectiveReason,
-        delay,
-        GetClientCount(false),
-        WhaleTracker_IsRoundRunning() ? 1 : 0);
-    g_hPointsCacheWarmupTimer = CreateTimer(delay, Timer_WarmupPointsCache, _, TIMER_FLAG_NO_MAPCHANGE);
-}
-
-public Action Timer_WarmupPointsCache(Handle timer, any data)
-{
-    char reason[128];
-    strcopy(reason, sizeof(reason), g_sPointsCacheWarmupReason[0] ? g_sPointsCacheWarmupReason : "unspecified");
-
-    if (timer == g_hPointsCacheWarmupTimer)
-    {
-        g_hPointsCacheWarmupTimer = null;
-    }
-    g_sPointsCacheWarmupReason[0] = '\0';
-
-    PrintToServer("[WhaleTracker] Points cache warmup fired reason=%s players=%d round=%d",
-        reason,
-        GetClientCount(false),
-        WhaleTracker_IsRoundRunning() ? 1 : 0);
-    RequestWhalePointsCacheRefreshWithReason(reason);
-    return Plugin_Stop;
 }
 
 public void RequestWhalePointsCacheRefreshWithReason(const char[] reason)
@@ -293,8 +246,6 @@ public void OnMapStart()
     RefreshHostAddress();
     ClearOnlineStats();
     ResetPointsCacheRefreshState();
-    g_hPointsCacheWarmupTimer = null;
-    SchedulePointsCacheWarmupWithReason(5.0, "map_start");
     g_hRoundMvpTimer = null;
     ClearCurrentRoundMvpState();
     ClearLastRoundMvpState();
@@ -316,12 +267,6 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
-    if (g_hPointsCacheWarmupTimer != null)
-    {
-        CloseHandle(g_hPointsCacheWarmupTimer);
-        g_hPointsCacheWarmupTimer = null;
-    }
-
     ResetPointsCacheRefreshState();
     g_hRoundMvpTimer = null;
 
@@ -417,7 +362,6 @@ public void OnPluginEnd()
     // invalid by the time OnPluginEnd runs.
     g_hOnlineTimer = null;
     g_hPeriodicSaveTimer = null;
-    g_hPointsCacheWarmupTimer = null;
     g_hRoundMvpTimer = null;
     g_hReconnectTimer = null;
     g_hSavePumpTimer = null;

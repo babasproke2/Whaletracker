@@ -8,10 +8,6 @@ void WhaleTracker_MaybeMarkDatabaseReady()
     g_bDatabaseConnectInFlight = false;
     g_bDatabaseReady = true;
     ResetPointsCacheRefreshState();
-    if (g_bPointsCacheSchemaReady)
-    {
-        SchedulePointsCacheWarmupWithReason(1.0, "startup");
-    }
     PumpSaveQueue();
 }
 
@@ -571,10 +567,6 @@ public void WhaleTracker_CreatePointsCacheTable(Database db, DBResultSet results
     g_hDatabase.Query(WhaleTracker_AlterCallback,
         "ALTER TABLE whaletracker_points_cache_build CONVERT TO CHARACTER SET utf8mb4");
 
-    if (g_bDatabaseReady)
-    {
-        SchedulePointsCacheWarmupWithReason(1.0, "startup");
-    }
 }
 
 public void WhaleTracker_AlterCallback(Database db, DBResultSet results, const char[] error, any data)

@@ -241,12 +241,10 @@ bool g_bShuttingDown = false;
 Handle g_hOnlineTimer = null;
 Handle g_hReconnectTimer = null;
 Handle g_hSavePumpTimer = null;
-Handle g_hPointsCacheWarmupTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
 int g_iPointsCacheRefreshSerial = 0;
 char g_sPointsCacheRefreshReason[128];
-char g_sPointsCacheWarmupReason[128];
 
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];
 char g_sLastRoundMvpSteamId[4][STEAMID64_LEN];
