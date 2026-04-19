@@ -92,7 +92,6 @@ enum WeaponCategory
     WeaponCategory_Count = WeaponCategory_Revolvers
 }
 #define WEAPON_CATEGORY_COUNT 8
-#define WHALE_POINTS_CACHE_DB_LOCK "whaletracker_points_cache_refresh"
 
 public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3], int damagecustom);
 void RequestClientStateLoads(int client);
@@ -163,10 +162,12 @@ ConVar g_hGameName = null;
 ConVar g_hGameUrl = null;
 ConVar g_hEnableMatchLogs = null;
 ConVar g_hDeferredSavePump = null;
+ConVar g_hPointsCacheWriterPort = null;
 bool g_bDatabaseReady = false;
 bool g_bAsyncDatabaseConnected = false;
 bool g_bSyncDatabaseConnected = false;
 bool g_bDatabaseConnectInFlight = false;
+bool g_bPointsCacheSchemaReady = false;
 
 enum MatchStatField
 {
@@ -243,12 +244,8 @@ Handle g_hSavePumpTimer = null;
 Handle g_hPointsCacheWarmupTimer = null;
 Handle g_hAirshotForward = null;
 bool g_bPointsCacheRefreshInFlight = false;
-bool g_bPointsCacheRefreshQueued = false;
-bool g_bPointsCacheRefreshLockHeld = false;
 int g_iPointsCacheRefreshSerial = 0;
-int g_iPointsCacheRefreshLockSerial = 0;
 char g_sPointsCacheRefreshReason[128];
-char g_sQueuedPointsCacheRefreshReason[128];
 char g_sPointsCacheWarmupReason[128];
 
 char g_sRoundMvpSteamId[4][STEAMID64_LEN];

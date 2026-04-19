@@ -1313,7 +1313,7 @@ void UpdateWhalePointsCacheMetadata(const char[] steamId, const char[] playerNam
 
 void RefreshWhalePointsCacheAll()
 {
-    if (!g_bDatabaseReady || g_hDatabase == null || g_bPointsCacheRefreshInFlight)
+    if (!g_bDatabaseReady || g_hDatabase == null || !g_bPointsCacheSchemaReady || !WhaleTracker_IsPointsCacheWriter() || g_bPointsCacheRefreshInFlight)
     {
         return;
     }
@@ -1323,115 +1323,33 @@ void RefreshWhalePointsCacheAll()
     int refreshSerial = g_iPointsCacheRefreshSerial;
 
     char query[128];
-    Format(query, sizeof(query), "SELECT GET_LOCK('%s', 0)", WHALE_POINTS_CACHE_DB_LOCK);
-    g_hDatabase.Query(WhaleTracker_RefreshPointsCacheLockCallback, query, refreshSerial);
-}
-
-void DeferWhalePointsCacheRefreshToPeer()
-{
-    char activeReason[128];
-    char queuedReason[128];
-    strcopy(activeReason, sizeof(activeReason), g_sPointsCacheRefreshReason[0] ? g_sPointsCacheRefreshReason : "unknown");
-    strcopy(queuedReason, sizeof(queuedReason), g_sQueuedPointsCacheRefreshReason[0] ? g_sQueuedPointsCacheRefreshReason : "");
-
-    g_bPointsCacheRefreshInFlight = false;
-    g_bPointsCacheRefreshQueued = false;
-    g_sPointsCacheRefreshReason[0] = '\0';
-    g_sQueuedPointsCacheRefreshReason[0] = '\0';
-
-    PrintToServer("[WhaleTracker] Points cache refresh waiting on peer reason=%s queued_reason=%s players=%d round=%d",
-        activeReason,
-        queuedReason[0] ? queuedReason : "none",
-        GetClientCount(false),
-        WhaleTracker_IsRoundRunning() ? 1 : 0);
-
-    SchedulePointsCacheWarmupWithReason(2.0, queuedReason[0] ? queuedReason : activeReason);
+    Format(query, sizeof(query),
+        "CREATE TABLE IF NOT EXISTS whaletracker_points_cache_build LIKE whaletracker_points_cache");
+    g_hDatabase.Query(WhaleTracker_RefreshPointsCachePrepareCallback, query, refreshSerial);
 }
 
 void FinishWhalePointsCacheRefresh(bool success)
 {
-    bool rerun = g_bPointsCacheRefreshQueued;
     char activeReason[128];
-    char queuedReason[128];
     strcopy(activeReason, sizeof(activeReason), g_sPointsCacheRefreshReason[0] ? g_sPointsCacheRefreshReason : "unknown");
-    strcopy(queuedReason, sizeof(queuedReason), g_sQueuedPointsCacheRefreshReason[0] ? g_sQueuedPointsCacheRefreshReason : "");
-    ReleasePointsCacheRefreshLockOnDatabase();
     g_bPointsCacheRefreshInFlight = false;
-    g_bPointsCacheRefreshQueued = false;
     g_sPointsCacheRefreshReason[0] = '\0';
-    g_sQueuedPointsCacheRefreshReason[0] = '\0';
 
     if (success)
     {
-        PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table. reason=%s rerun=%d queued_reason=%s players=%d round=%d",
+        PrintToServer("[WhaleTracker] Rebuilt cached points/ranks table. reason=%s players=%d round=%d",
             activeReason,
-            rerun ? 1 : 0,
-            queuedReason[0] ? queuedReason : "none",
             GetClientCount(false),
             WhaleTracker_IsRoundRunning() ? 1 : 0);
     }
 
     if (!success)
     {
-        PrintToServer("[WhaleTracker] Points cache refresh failed reason=%s rerun=%d queued_reason=%s players=%d round=%d",
+        PrintToServer("[WhaleTracker] Points cache refresh failed reason=%s players=%d round=%d",
             activeReason,
-            rerun ? 1 : 0,
-            queuedReason[0] ? queuedReason : "none",
             GetClientCount(false),
             WhaleTracker_IsRoundRunning() ? 1 : 0);
     }
-
-    if (rerun)
-    {
-        RequestWhalePointsCacheRefreshWithReason(queuedReason[0] ? queuedReason : "refresh_rerun");
-    }
-}
-
-public void WhaleTracker_RefreshPointsCacheLockCallback(Database db, DBResultSet results, const char[] error, any data)
-{
-    int refreshSerial = data;
-    bool acquired = false;
-
-    if (error[0] == '\0' && results != null && results.FetchRow())
-    {
-        acquired = (results.FetchInt(0) == 1);
-    }
-
-    if (refreshSerial != g_iPointsCacheRefreshSerial)
-    {
-        if (acquired)
-        {
-            char releaseQuery[96];
-            Format(releaseQuery, sizeof(releaseQuery), "DO RELEASE_LOCK('%s')", WHALE_POINTS_CACHE_DB_LOCK);
-            SQL_FastQuery(db, releaseQuery);
-        }
-        return;
-    }
-
-    if (error[0] != '\0')
-    {
-        FinishWhalePointsCacheRefresh(false);
-        LogError("[WhaleTracker] Failed to acquire points cache rebuild lock: %s", error);
-        if (WhaleTracker_IsConnectionLostError(error))
-        {
-            WhaleTracker_ScheduleReconnect(2.0);
-        }
-        return;
-    }
-
-    if (!acquired)
-    {
-        DeferWhalePointsCacheRefreshToPeer();
-        return;
-    }
-
-    g_bPointsCacheRefreshLockHeld = true;
-    g_iPointsCacheRefreshLockSerial = refreshSerial;
-
-    char query[128];
-    Format(query, sizeof(query),
-        "CREATE TABLE IF NOT EXISTS whaletracker_points_cache_build LIKE whaletracker_points_cache");
-    db.Query(WhaleTracker_RefreshPointsCachePrepareCallback, query, refreshSerial);
 }
 
 public void WhaleTracker_RefreshPointsCachePrepareCallback(Database db, DBResultSet results, const char[] error, any data)
@@ -1439,7 +1357,6 @@ public void WhaleTracker_RefreshPointsCachePrepareCallback(Database db, DBResult
     int refreshSerial = data;
     if (refreshSerial != g_iPointsCacheRefreshSerial)
     {
-        ReleasePointsCacheRefreshLockForSerial(db, refreshSerial);
         return;
     }
 
@@ -1465,7 +1382,6 @@ public void WhaleTracker_RefreshPointsCachePopulateCallback(Database db, DBResul
     int refreshSerial = data;
     if (refreshSerial != g_iPointsCacheRefreshSerial)
     {
-        ReleasePointsCacheRefreshLockForSerial(db, refreshSerial);
         return;
     }
 
@@ -1516,7 +1432,6 @@ public void WhaleTracker_RefreshPointsCacheSwapCallback(Database db, DBResultSet
     int refreshSerial = data;
     if (refreshSerial != g_iPointsCacheRefreshSerial)
     {
-        ReleasePointsCacheRefreshLockForSerial(db, refreshSerial);
         return;
     }
 
@@ -1545,7 +1460,6 @@ public void WhaleTracker_RefreshPointsCacheSwapFinalizeCallback(Database db, DBR
     int refreshSerial = data;
     if (refreshSerial != g_iPointsCacheRefreshSerial)
     {
-        ReleasePointsCacheRefreshLockForSerial(db, refreshSerial);
         return;
     }
 

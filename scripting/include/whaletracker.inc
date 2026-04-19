@@ -1558,7 +1558,14 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
     {
         char colorTag[32];
         GetClientFiltersNameColorTag(target, colorTag, sizeof(colorTag));
-        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {%s}%N{default}", sign, absPoints, colorTag, target);
+        if (StrEqual(colorTag, "teamcolor", false) || StrEqual(colorTag, "{teamcolor}", false))
+        {
+            CPrintToChatEx(client, target, "{magenta}[BP] {limegreen}%s%i{default} for killing {teamcolor}%N{default}", sign, absPoints, target);
+        }
+        else
+        {
+            CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {%s}%N{default}", sign, absPoints, colorTag, target);
+        }
         return true;
     }
 
@@ -1570,7 +1577,14 @@ bool ApplyBonusPointsNow(int client, int points = 1, bool playSound = true, bool
         {
             strcopy(colorTag, sizeof(colorTag), "gold");
         }
-        CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {magenta}MVP {%s}%N{default}", sign, absPoints, colorTag, target);
+        if (StrEqual(colorTag, "teamcolor", false) || StrEqual(colorTag, "{teamcolor}", false))
+        {
+            CPrintToChatEx(client, target, "{magenta}[BP] {limegreen}%s%i{default} for killing {magenta}MVP {teamcolor}%N{default}", sign, absPoints, target);
+        }
+        else
+        {
+            CPrintToChat(client, "{magenta}[BP] {limegreen}%s%i{default} for killing {magenta}MVP {%s}%N{default}", sign, absPoints, colorTag, target);
+        }
         return true;
     }
 
