@@ -447,7 +447,7 @@ public void OnClientDisconnect(int client)
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
 
-    if (clearedRoundMvp && WhaleTracker_IsRoundRunning())
+    if (clearedRoundMvp)
     {
         QueueRoundMvpSelection();
     }

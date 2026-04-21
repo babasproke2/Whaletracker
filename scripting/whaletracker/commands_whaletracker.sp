@@ -64,11 +64,11 @@ void PrintUnrankedWhalePointsMessage(int client, int target)
         int combined = g_Stats[target].kills + g_Stats[target].deaths;
         int playtime = (g_Stats[target].playtime > 0) ? g_Stats[target].playtime : 0;
         float hours = float(playtime) / 3600.0;
-        CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", displayName, WHALE_RANK_MIN_KD_SUM, combined, hours);
+        CPrintToChatEx(client, target, "{green}[WhaleTracker]{default} %s{default} is unranked until Kills + Deaths reaches at least %d and playtime reaches 3 hours (current: %d K+D, %.2f hours).", displayName, WHALE_RANK_MIN_KD_SUM, combined, hours);
         return;
     }
 
-    CPrintToChat(client, "{green}[WhaleTracker]{default} %s{default} is currently unranked.", displayName);
+    CPrintToChatEx(client, target, "{green}[WhaleTracker]{default} %s{default} is currently unranked.", displayName);
 }
 
 void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, int points, int rank, bool hasRank)
@@ -78,24 +78,32 @@ void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, int poi
 
     if (broadcast)
     {
-        if (hasRank && rank > 0)
+        for (int i = 1; i <= MaxClients; i++)
         {
-            CPrintToChatAll("{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
-        }
-        else
-        {
-            CPrintToChatAll("{gold}[Whaletracker]{default} %s{default}'s Points: %d", displayName, points);
+            if (!IsClientInGame(i))
+            {
+                continue;
+            }
+
+            if (hasRank && rank > 0)
+            {
+                CPrintToChatEx(i, target, "{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
+            }
+            else
+            {
+                CPrintToChatEx(i, target, "{gold}[Whaletracker]{default} %s{default}'s Points: %d", displayName, points);
+            }
         }
     }
     else
     {
         if (hasRank && rank > 0)
         {
-            CPrintToChat(client, "{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
+            CPrintToChatEx(client, target, "{gold}[Whaletracker]{default} %s{default}'s Points: %d, Rank #%d", displayName, points, rank);
         }
         else
         {
-            CPrintToChat(client, "{gold}[Whaletracker]{default} %s{default}'s Points: %d", displayName, points);
+            CPrintToChatEx(client, target, "{gold}[Whaletracker]{default} %s{default}'s Points: %d", displayName, points);
         }
     }
 
@@ -301,7 +309,7 @@ public Action Command_ShowMvps(int client, int args)
 
     bool missingCurrentMvp = (g_sRoundMvpSteamId[2][0] == '\0' || g_sRoundMvpSteamId[3][0] == '\0');
 
-    if (missingCurrentMvp && WhaleTracker_IsRoundRunning())
+    if (missingCurrentMvp)
     {
         SelectRoundMvpsNow();
 

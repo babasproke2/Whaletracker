@@ -151,11 +151,6 @@ void MarkSteamIdAsMapMvp(const char[] steamId)
 
 public void QueueRoundMvpSelection()
 {
-    if (!WhaleTracker_IsRoundRunning())
-    {
-        return;
-    }
-
     if (g_hRoundMvpTimer != null)
     {
         return;
@@ -334,11 +329,6 @@ bool IsBetterRoundMvpCandidate(int candidate, int candidatePoints, int currentBe
 
 bool SelectRoundMvpsNow()
 {
-    if (!WhaleTracker_IsRoundRunning())
-    {
-        return false;
-    }
-
     bool needRed = (g_sRoundMvpSteamId[2][0] == '\0');
     bool needBlue = (g_sRoundMvpSteamId[3][0] == '\0');
     int redMvp = 0;
@@ -447,7 +437,7 @@ public void Event_PlayerTeam(Event event, const char[] name, bool dontBroadcast)
     int oldTeam = event.GetInt("oldteam");
     int newTeam = event.GetInt("team");
     bool cleared = InvalidateClientRoundMvp(client, oldTeam);
-    if (WhaleTracker_IsRoundRunning() && (cleared || oldTeam != newTeam))
+    if (cleared || oldTeam != newTeam)
     {
         QueueRoundMvpSelection();
     }
