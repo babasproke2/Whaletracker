@@ -1716,6 +1716,38 @@ void ApplyAssistStats(WhaleStats stats)
 
 }
 
+bool ShouldSuppressDeathIncrementForCurrentGamemode()
+{
+    char gamemode[64];
+
+    if (g_hGameModeCvar == null)
+    {
+        g_hGameModeCvar = FindConVar("sm_gamemode");
+    }
+
+    if (g_hGameModeCvar == null)
+    {
+        return false;
+    }
+
+    g_hGameModeCvar.GetString(gamemode, sizeof(gamemode));
+    if (!gamemode[0])
+    {
+        return false;
+    }
+
+    return StrEqual(gamemode, "mge", false) || StrEqual(gamemode, "ultiduo", false);
+}
+
+void ApplyCumulativeDeathStats(WhaleStats stats)
+{
+    if (!ShouldSuppressDeathIncrementForCurrentGamemode())
+    {
+        stats.deaths++;
+    }
+    ResetLifeCounters(stats);
+}
+
 void ApplyDeathStats(WhaleStats stats)
 {
     stats.deaths++;

@@ -566,7 +566,7 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
                 g_Stats[victim].totalUberDrops++;
                 g_MapStats[victim].totalUberDrops++;
             }
-            ApplyDeathStats(g_Stats[victim]);
+            ApplyCumulativeDeathStats(g_Stats[victim]);
             ApplyDeathStats(g_MapStats[victim]);
             MarkClientDirty(victim);
         }
