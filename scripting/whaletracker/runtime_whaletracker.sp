@@ -48,6 +48,7 @@ public void GetSyncDatabaseError(char[] error, int maxlen)
 
 public void OnPluginStart()
 {
+    LoadTranslations("common.phrases");
     if (g_SaveQueue != null)
     {
         delete g_SaveQueue;
