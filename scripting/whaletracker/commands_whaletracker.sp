@@ -71,7 +71,7 @@ void PrintUnrankedWhalePointsMessage(int client, int target)
     CPrintToChatEx(client, target, "{green}[WhaleTracker]{default} %s{default} is currently unranked.", displayName);
 }
 
-void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, int points, int rank, bool hasRank)
+void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, bool showHints, int points, int rank, bool hasRank)
 {
     char displayName[128];
     GetClientChatDisplayName(target, displayName, sizeof(displayName));
@@ -120,8 +120,11 @@ void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, int poi
         CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
     }
 
-    CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard;");
-    CPrintToChat(client, "Use {gold}!calc{default} to view how this is calculated!");
+    if (showHints)
+    {
+        CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard;");
+        CPrintToChat(client, "Use {gold}!calc{default} to view how this is calculated!");
+    }
 }
 
 public Action Command_ShowPointsCalculation(int client, int args)
@@ -140,18 +143,18 @@ public Action Command_ShowPointsCalculation(int client, int args)
     return Plugin_Handled;
 }
 
-void QueryLiveWhalePointsRank(int client, int target, bool broadcast, int points)
+void QueryLiveWhalePointsRank(int client, int target, bool broadcast, bool showHints, int points)
 {
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
-        PrintLiveWhalePointsMessage(client, target, broadcast, points, 0, false);
+        PrintLiveWhalePointsMessage(client, target, broadcast, showHints, points, 0, false);
         return;
     }
 
     EnsureClientSteamId(target);
     if (g_Stats[target].steamId[0] == '\0')
     {
-        PrintLiveWhalePointsMessage(client, target, broadcast, points, 0, false);
+        PrintLiveWhalePointsMessage(client, target, broadcast, showHints, points, 0, false);
         return;
     }
 
@@ -162,6 +165,7 @@ void QueryLiveWhalePointsRank(int client, int target, bool broadcast, int points
     pack.WriteCell(GetClientUserId(client));
     pack.WriteCell(GetClientUserId(target));
     pack.WriteCell(broadcast ? 1 : 0);
+    pack.WriteCell(showHints ? 1 : 0);
     pack.WriteCell(points);
 
     char query[6144];
@@ -188,6 +192,7 @@ public void WhaleTracker_ShowLivePointsRankCallback(Database db, DBResultSet res
     int client = GetClientOfUserId(pack.ReadCell());
     int target = GetClientOfUserId(pack.ReadCell());
     bool broadcast = (pack.ReadCell() != 0);
+    bool showHints = (pack.ReadCell() != 0);
     int points = pack.ReadCell();
     delete pack;
 
@@ -209,7 +214,7 @@ public void WhaleTracker_ShowLivePointsRankCallback(Database db, DBResultSet res
         {
             WhaleTracker_ScheduleReconnect(2.0);
         }
-        PrintLiveWhalePointsMessage(client, target, broadcast, points, 0, false);
+        PrintLiveWhalePointsMessage(client, target, broadcast, showHints, points, 0, false);
         return;
     }
 
@@ -221,10 +226,10 @@ public void WhaleTracker_ShowLivePointsRankCallback(Database db, DBResultSet res
         hasRank = (rank > 0);
     }
 
-    PrintLiveWhalePointsMessage(client, target, broadcast, points, rank, hasRank);
+    PrintLiveWhalePointsMessage(client, target, broadcast, showHints, points, rank, hasRank);
 }
 
-Action HandleShowPointsCommand(int client, int target, bool broadcast)
+Action HandleShowPointsCommand(int client, int target, bool broadcast, bool showHints)
 {
     EnsureClientSteamId(target);
     if (g_Stats[target].steamId[0] == '\0' || !g_Stats[target].loaded)
@@ -243,7 +248,7 @@ Action HandleShowPointsCommand(int client, int target, bool broadcast)
     }
 
     int points = GetWhalePointsForStats(g_Stats[target]);
-    QueryLiveWhalePointsRank(client, target, broadcast, points);
+    QueryLiveWhalePointsRank(client, target, broadcast, showHints, points);
     return Plugin_Handled;
 }
 
@@ -273,7 +278,7 @@ public Action Command_ShowPoints(int client, int args)
             }
         }
     }
-    return HandleShowPointsCommand(client, target, false);
+    return HandleShowPointsCommand(client, target, false, true);
 }
 
 public Action Command_ShowPointsMe(int client, int args)
@@ -302,7 +307,7 @@ public Action Command_ShowPointsMe(int client, int args)
             }
         }
     }
-    return HandleShowPointsCommand(client, target, false);
+    return HandleShowPointsCommand(client, target, false, false);
 }
 
 public Action Command_ShowMvps(int client, int args)
