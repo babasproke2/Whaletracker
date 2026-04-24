@@ -120,16 +120,24 @@ void PrintLiveWhalePointsMessage(int client, int target, bool broadcast, int poi
         CPrintToChat(client, "Kill/Death ratio: %.2f", lifetimeKd);
     }
 
-    if (broadcast)
+    CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard;");
+    CPrintToChat(client, "Use {gold}!calc{default} to view how this is calculated!");
+}
+
+public Action Command_ShowPointsCalculation(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client) || IsFakeClient(client))
     {
-        CPrintToChat(client, "Score: {lightgreen}1000 * confidence * (5 * combat + pressure + support)");
-        CPrintToChat(client, "Combat: {lightgreen}(kills + assists * 0.35) / (deaths + 20)");
-        CPrintToChat(client, "Pressure: {lightgreen}ln(1 + damage / (150 * eng))");
-        CPrintToChat(client, "Support: {lightgreen}0.60 * ln(1 + healing / (100 * eng)) + 0.90 * ln(1 + 60 * ubers / eng)");
-        CPrintToChat(client, "Confidence: {axis}sqrt(eng / (eng + 400)) * (hours / (hours + 20))");
-        CPrintToChat(client, "Where {lightgreen}eng = kills + deaths{default} and {lightgreen}hours = playtime / 3600");
-        CPrintToChat(client, "Use {gold}!ranks{default} to view the leaderboard!");
+        return Plugin_Handled;
     }
+
+    CPrintToChat(client, "Score: {lightgreen}1000 * confidence * (5 * combat + pressure + support)");
+    CPrintToChat(client, "Combat: {lightgreen}(kills + assists * 0.35) / (deaths + 20)");
+    CPrintToChat(client, "Pressure: {lightgreen}ln(1 + damage / (150 * eng))");
+    CPrintToChat(client, "Support: {lightgreen}0.60 * ln(1 + healing / (100 * eng)) + 0.90 * ln(1 + 60 * ubers / eng)");
+    CPrintToChat(client, "Confidence: {axis}sqrt(eng / (eng + 400)) * (hours / (hours + 20))");
+    CPrintToChat(client, "Where {lightgreen}eng = kills + deaths{default} and {lightgreen}hours = playtime / 3600");
+    return Plugin_Handled;
 }
 
 void QueryLiveWhalePointsRank(int client, int target, bool broadcast, int points)
@@ -265,7 +273,7 @@ public Action Command_ShowPoints(int client, int args)
             }
         }
     }
-    return HandleShowPointsCommand(client, target, true);
+    return HandleShowPointsCommand(client, target, false);
 }
 
 public Action Command_ShowPointsMe(int client, int args)
@@ -555,21 +563,24 @@ public Action Command_SendBonusPoints(int client, int args)
         SaySounds_PlayCommand(0, WT_BONUS_POINTS_SOUND, true);
     }
 
-    char senderColor[32];
-    char targetColor[32];
-    GetClientFiltersNameColorTag(client, senderColor, sizeof(senderColor));
-    GetClientFiltersNameColorTag(target, targetColor, sizeof(targetColor));
-
-    if (senderColor[0] == '\0')
+    char senderDisplay[128];
+    char targetDisplay[128];
+    GetClientChatDisplayName(client, senderDisplay, sizeof(senderDisplay));
+    GetClientChatDisplayName(target, targetDisplay, sizeof(targetDisplay));
+    if (StrContains(targetDisplay, "{teamcolor}", false) != -1)
     {
-        strcopy(senderColor, sizeof(senderColor), "gold");
-    }
-    if (targetColor[0] == '\0')
-    {
-        strcopy(targetColor, sizeof(targetColor), "gold");
+        ReplaceString(targetDisplay, sizeof(targetDisplay), "{teamcolor}", "{gold}", false);
     }
 
-    CPrintToChatAll("{lightgreen}[WhaleTracker]{default} {%s}%N{default} sent {%s}%N{default} %i {magenta}BP{default}!", senderColor, client, targetColor, target, amount);
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (!IsClientInGame(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        CPrintToChatEx(i, client, "{lightgreen}[WhaleTracker]{default} %s{default} sent %s{default} %i {magenta}BP{default}!", senderDisplay, targetDisplay, amount);
+    }
     return Plugin_Handled;
 }
 
@@ -936,6 +947,10 @@ bool GetSteamIdColoredDisplayName(const char[] steamId, char[] buffer, int maxle
     if (client > 0)
     {
         GetClientChatDisplayName(client, buffer, maxlen);
+        if (StrContains(buffer, "{teamcolor}", false) != -1)
+        {
+            ReplaceString(buffer, maxlen, "{teamcolor}", "{gold}", false);
+        }
         return (buffer[0] != '\0');
     }
 

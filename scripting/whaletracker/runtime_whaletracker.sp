@@ -118,6 +118,7 @@ public void OnPluginStart()
     RegConsoleCmd("sm_ptsme", Command_ShowPointsMe, "Show your WhalePoints only to yourself.");
     RegConsoleCmd("sm_rank", Command_ShowPoints, "Show your WhalePoints total.");
     RegConsoleCmd("sm_ps", Command_ShowPoints, "Show your WhalePoints total.");
+    RegConsoleCmd("sm_calc", Command_ShowPointsCalculation, "Show how WhalePoints are calculated.");
     RegConsoleCmd("sm_mvp", Command_ShowMvps, "Show current and last-round MVPs.");
     RegConsoleCmd("sm_seen", Command_ShowLastSeen, "Search cached names and show a player's last seen time.");
     RegConsoleCmd("sm_fav", Command_SetFavoriteClass, "Set your favorite class for WhaleTracker.");
