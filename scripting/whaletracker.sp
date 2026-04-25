@@ -161,6 +161,7 @@ ConVar g_hVisibleMaxPlayers = null;
 ConVar g_hGameName = null;
 ConVar g_hGameUrl = null;
 ConVar g_hEnableMatchLogs = null;
+ConVar g_hOnlineUpdateInterval = null;
 ConVar g_hDeferredSavePump = null;
 bool g_bDatabaseReady = false;
 bool g_bAsyncDatabaseConnected = false;

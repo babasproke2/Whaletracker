@@ -110,6 +110,21 @@ bool WhaleTracker_IsRoundRunning()
     return (GameRules_GetRoundState() == RoundState_RoundRunning);
 }
 
+bool WhaleTracker_HasHumanClientsExcept(int excludedClient)
+{
+    for (int i = 1; i <= MaxClients; i++)
+    {
+        if (i == excludedClient || !IsClientConnected(i) || IsFakeClient(i))
+        {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
 void WhaleTracker_RefreshClientTrackingState(int client)
 {
     if (client <= 0 || client > MaxClients)
@@ -448,6 +463,14 @@ void ResetMatchStorage()
     g_MatchNames.Clear();
 }
 
+void ClearCurrentMatchTracking()
+{
+    ResetMatchStorage();
+    g_bMatchFinalized = true;
+    g_sCurrentLogId[0] = '\0';
+    g_iMatchStartTime = 0;
+}
+
 void CopyLowercase(const char[] source, char[] dest, int maxlen)
 {
     if (maxlen <= 0)
@@ -738,10 +761,8 @@ void BeginMatchTracking()
 {
     if (!WhaleTracker_ShouldUseMatchLogs())
     {
-        g_sCurrentLogId[0] = '\0';
+        ClearCurrentMatchTracking();
         g_sLastFinalizedLogId[0] = '\0';
-        g_iMatchStartTime = 0;
-        g_bMatchFinalized = true;
         return;
     }
 
@@ -1091,11 +1112,8 @@ void FinalizeCurrentMatch(bool shuttingDown)
 {
     if (!WhaleTracker_ShouldUseMatchLogs())
     {
-        ResetMatchStorage();
-        g_bMatchFinalized = true;
-        g_sCurrentLogId[0] = '\0';
+        ClearCurrentMatchTracking();
         g_sLastFinalizedLogId[0] = '\0';
-        g_iMatchStartTime = 0;
         return;
     }
 
@@ -1133,8 +1151,7 @@ void FinalizeCurrentMatch(bool shuttingDown)
 
     if (!g_bDatabaseReady || g_hDatabase == null)
     {
-        ResetMatchStorage();
-        g_bMatchFinalized = true;
+        ClearCurrentMatchTracking();
         return;
     }
 
@@ -1145,8 +1162,7 @@ void FinalizeCurrentMatch(bool shuttingDown)
         {
             delete snap;
         }
-        ResetMatchStorage();
-        g_bMatchFinalized = true;
+        ClearCurrentMatchTracking();
         return;
     }
 
@@ -1180,13 +1196,11 @@ void FinalizeCurrentMatch(bool shuttingDown)
 
     InsertMatchLogRecord(endTime, duration, participantCount, shuttingDown);
 
-    ResetMatchStorage();
-    g_bMatchFinalized = true;
     if (g_sCurrentLogId[0])
     {
         strcopy(g_sLastFinalizedLogId, sizeof(g_sLastFinalizedLogId), g_sCurrentLogId);
     }
-    g_sCurrentLogId[0] = '\0';
+    ClearCurrentMatchTracking();
 }
 
 void EnsureClientSteamId(int client)

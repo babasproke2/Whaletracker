@@ -46,6 +46,41 @@ public void GetSyncDatabaseError(char[] error, int maxlen)
     SQL_GetError(db, error, maxlen);
 }
 
+float WhaleTracker_GetOnlineUpdateInterval()
+{
+    float interval = 10.0;
+    if (g_hOnlineUpdateInterval != null)
+    {
+        interval = GetConVarFloat(g_hOnlineUpdateInterval);
+    }
+    if (interval < 1.0)
+    {
+        interval = 1.0;
+    }
+    return interval;
+}
+
+void WhaleTracker_RestartOnlineTimer()
+{
+    if (g_hOnlineTimer != null)
+    {
+        CloseHandle(g_hOnlineTimer);
+        g_hOnlineTimer = null;
+    }
+
+    if (g_bShuttingDown)
+    {
+        return;
+    }
+
+    g_hOnlineTimer = CreateTimer(WhaleTracker_GetOnlineUpdateInterval(), Timer_UpdateOnlineStats, _, TIMER_REPEAT);
+}
+
+public void ConVarChanged_OnlineUpdateInterval(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    WhaleTracker_RestartOnlineTimer();
+}
+
 public void OnPluginStart()
 {
     LoadTranslations("common.phrases");
@@ -71,6 +106,17 @@ public void OnPluginStart()
     g_CvarDatabase.GetString(g_sDatabaseConfig, sizeof(g_sDatabaseConfig));
     g_hGameName = CreateConVar("sm_whaletracker_game", "TF2", "Game label stored in WhaleTracker server snapshots.");
     g_hGameUrl = CreateConVar("sm_whaletracker_game_url", "440", "Steam store app ID used for WhaleTracker server snapshots.");
+    g_hOnlineUpdateInterval = CreateConVar(
+        "sm_whaletracker_online_update_interval",
+        "10.0",
+        "Seconds between whaletracker_online and whaletracker_servers updates.",
+        FCVAR_NONE,
+        true,
+        1.0,
+        true,
+        300.0
+    );
+    g_hOnlineUpdateInterval.AddChangeHook(ConVarChanged_OnlineUpdateInterval);
 
     g_hEnableMatchLogs = CreateConVar(
         "sm_whaletracker_enable_matchlogs",
@@ -156,11 +202,7 @@ public void OnPluginStart()
 
     WhaleTracker_SQLConnect();
 
-    if (g_hOnlineTimer != null)
-    {
-        CloseHandle(g_hOnlineTimer);
-    }
-    g_hOnlineTimer = CreateTimer(10.0, Timer_UpdateOnlineStats, _, TIMER_REPEAT);
+    WhaleTracker_RestartOnlineTimer();
     if (g_hPeriodicSaveTimer != null)
     {
         CloseHandle(g_hPeriodicSaveTimer);
@@ -434,6 +476,8 @@ public void OnClientDisconnect(int client)
         return;
     }
 
+    bool lastHuman = !WhaleTracker_HasHumanClientsExcept(client);
+
     if (IsClientInGame(client))
     {
         SDKUnhook(client, SDKHook_OnTakeDamage, OnTakeDamage);
@@ -449,7 +493,12 @@ public void OnClientDisconnect(int client)
     g_bTrackEligible[client] = false;
     g_iDamageGate[client] = 0;
 
-    if (clearedRoundMvp)
+    if (lastHuman)
+    {
+        FinalizeCurrentMatch(false);
+    }
+
+    if (clearedRoundMvp && !lastHuman)
     {
         QueueRoundMvpSelection();
     }
