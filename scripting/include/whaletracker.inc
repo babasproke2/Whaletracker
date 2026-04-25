@@ -1113,6 +1113,22 @@ void InsertMatchLogRecord(int endTime, int duration, int participantCount, bool 
     QueueSaveQuery(query, 0, forceSync);
 }
 
+void DeleteMatchLogRecord(const char[] logId, bool forceSync)
+{
+    if (!WhaleTracker_ShouldUseMatchLogs() || !logId[0] || !g_bDatabaseReady || g_hDatabase == null)
+        return;
+
+    char escaped[128];
+    EscapeSqlString(logId, escaped, sizeof(escaped));
+
+    char query[256];
+    Format(query, sizeof(query), "DELETE FROM whaletracker_log_players WHERE log_id = '%s'", escaped);
+    QueueSaveQuery(query, 0, forceSync);
+
+    Format(query, sizeof(query), "DELETE FROM whaletracker_logs WHERE log_id = '%s'", escaped);
+    QueueSaveQuery(query, 0, forceSync);
+}
+
 void FinalizeCurrentMatch(bool shuttingDown)
 {
     if (!WhaleTracker_ShouldUseMatchLogs())
@@ -1178,6 +1194,16 @@ void FinalizeCurrentMatch(bool shuttingDown)
         duration = 0;
     }
 
+    int participantCount = snap.Length;
+    if (participantCount == 1)
+    {
+        delete snap;
+        DeleteMatchLogRecord(g_sCurrentLogId, shuttingDown);
+        g_sLastFinalizedLogId[0] = '\0';
+        ClearCurrentMatchTracking();
+        return;
+    }
+
     for (int i = 0; i < snap.Length; i++)
     {
         char steamId[STEAMID64_LEN];
@@ -1196,7 +1222,6 @@ void FinalizeCurrentMatch(bool shuttingDown)
         InsertPlayerLogRecord(data, steamId, name, endTime, shuttingDown);
     }
 
-    int participantCount = snap.Length;
     delete snap;
 
     InsertMatchLogRecord(endTime, duration, participantCount, shuttingDown);
