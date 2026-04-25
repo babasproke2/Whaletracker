@@ -238,6 +238,11 @@ bool QueueClientOnlineSnapshot(int client, int now, float engineNow, int playerC
 
 public Action Timer_UpdateOnlineStats(Handle timer, any data)
 {
+    if (!WhaleTracker_HasHumanClientsExcept(0))
+    {
+        FinalizeCurrentMatch(false);
+    }
+
     if (!g_bDatabaseReady || g_hDatabase == null)
         return Plugin_Continue;
 
