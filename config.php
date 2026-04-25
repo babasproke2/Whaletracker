@@ -11,6 +11,7 @@ define('WT_DB_NAME', getenv('WT_DB_NAME') ?: 'sourcemod');
 define('WT_DB_USER', getenv('WT_DB_USER') ?: '');
 define('WT_DB_PASS', getenv('WT_DB_PASS') ?: '');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
+define('WT_DB_POINTS_CACHE_TABLE', getenv('WT_DB_POINTS_CACHE_TABLE') ?: 'whaletracker_points_cache');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
 // Steam API key lives in environment variable STEAM_API_KEY.

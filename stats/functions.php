@@ -401,6 +401,20 @@ function wt_fetch_all_stats(): array
     return $rows;
 }
 
+function wt_points_cache_table(): string
+{
+    return defined('WT_DB_POINTS_CACHE_TABLE') ? WT_DB_POINTS_CACHE_TABLE : 'whaletracker_points_cache';
+}
+
+function wt_ranked_stats_join(): string
+{
+    return sprintf(
+        '%s wt INNER JOIN %s pc ON pc.steamid = wt.steamid AND pc.rank > 0',
+        WT_DB_TABLE,
+        wt_points_cache_table()
+    );
+}
+
 function wt_logs_table(): string
 {
     return defined('WT_DB_LOG_TABLE') ? WT_DB_LOG_TABLE : 'whaletracker_logs';
@@ -1968,11 +1982,7 @@ function wt_fetch_summary_stats(): array
 
     return $summary;
 }
-// This function fetches paginated player stats with two modes:
-// With search: Loads ALL players, enriches with Steam profiles, 
-// sorts/filters them in memory, then paginates the results (less efficient for large datasets).
-// Without search: Uses efficient SQL pagination to fetch only the needed page from database,
-//  then enriches those specific players with Steam profile data.
+// Fetch paginated cumulative rows from rank-eligible players only.
 function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): array
 {
     $limit = max(1, $limit);
@@ -1980,14 +1990,15 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
     $pdo = wt_pdo();
     $search = $search !== null ? trim($search) : '';
     $orderClause = wt_stats_order_clause();
+    $eligibleJoin = wt_ranked_stats_join();
 
     if ($search !== '') {
         $searchLower = function_exists('mb_strtolower') ? mb_strtolower($search, 'UTF-8') : strtolower($search);
         $likeTerm = '%' . $searchLower . '%';
         $steamLike = '%' . $search . '%';
         $countSql = sprintf(
-            'SELECT COUNT(*) FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact',
-            WT_DB_TABLE
+            'SELECT COUNT(*) FROM %s WHERE wt.cached_personaname_lower LIKE :term OR wt.steamid LIKE :steam OR wt.steamid = :exact',
+            $eligibleJoin
         );
         $countStmt = $pdo->prepare($countSql);
         $countStmt->bindValue(':term', $likeTerm, PDO::PARAM_STR);
@@ -2000,8 +2011,8 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
         }
 
         $sql = sprintf(
-            'SELECT * FROM %s WHERE cached_personaname_lower LIKE :term OR steamid LIKE :steam OR steamid = :exact ORDER BY %s LIMIT :limit OFFSET :offset',
-            WT_DB_TABLE,
+            'SELECT wt.* FROM %s WHERE wt.cached_personaname_lower LIKE :term OR wt.steamid LIKE :steam OR wt.steamid = :exact ORDER BY %s LIMIT :limit OFFSET :offset',
+            $eligibleJoin,
             $orderClause
         );
         $stmt = $pdo->prepare($sql);
@@ -2026,7 +2037,7 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
         ];
     }
 
-    $countSql = sprintf('SELECT COUNT(*) FROM %s', WT_DB_TABLE);
+    $countSql = sprintf('SELECT COUNT(*) FROM %s', $eligibleJoin);
     $total = (int)($pdo->query($countSql)->fetchColumn() ?: 0);
 
     if ($total === 0) {
@@ -2034,8 +2045,8 @@ function wt_fetch_stats_paginated(?string $search, int $limit, int $offset): arr
     }
 
     $sql = sprintf(
-        'SELECT * FROM %s ORDER BY %s LIMIT :limit OFFSET :offset',
-        WT_DB_TABLE,
+        'SELECT wt.* FROM %s ORDER BY %s LIMIT :limit OFFSET :offset',
+        $eligibleJoin,
         $orderClause
     );
     $stmt = $pdo->prepare($sql);
@@ -2481,9 +2492,10 @@ function wt_cumulative_revision(): string
     }
 
     $pdo = wt_pdo();
-    $stmt = $pdo->query(
-        "SELECT MAX(last_seen) AS recent, COUNT(*) AS total FROM " . WT_DB_TABLE
-    );
+    $stmt = $pdo->query(sprintf(
+        'SELECT GREATEST(COALESCE(MAX(wt.last_seen), 0), COALESCE(MAX(pc.updated_at), 0)) AS recent, COUNT(*) AS total FROM %s',
+        wt_ranked_stats_join()
+    ));
     $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
     $recent = (int)($row["recent"] ?? 0);
     $total = (int)($row["total"] ?? 0);

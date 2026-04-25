@@ -10,6 +10,7 @@ define('WT_DB_NAME', getenv('WT_DB_NAME') ?: 'sourcemod');
 define('WT_DB_USER', getenv('WT_DB_USER') ?: 'youruserhere');
 define('WT_DB_PASS', getenv('WT_DB_PASS') ?: 'yourpasswordhere');
 define('WT_DB_TABLE', getenv('WT_DB_TABLE') ?: 'whaletracker');
+define('WT_DB_POINTS_CACHE_TABLE', getenv('WT_DB_POINTS_CACHE_TABLE') ?: 'whaletracker_points_cache');
 define('WT_DB_MAP_TABLE', getenv('WT_DB_MAP_TABLE') ?: 'whaletracker_mapstats');
 
 define('WT_STEAM_API_KEY', getenv('STEAM_API_KEY') ?: '');
