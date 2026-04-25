@@ -717,6 +717,26 @@ bool ExtractSnapshotForSteamId(const char[] steamId, int data[MATCH_STAT_COUNT])
     return g_DisconnectedStats.GetArray(steamId, data, MATCH_STAT_COUNT);
 }
 
+int CountValidMatchSnapshots(StringMapSnapshot snap)
+{
+    if (snap == null)
+        return 0;
+
+    int count = 0;
+    for (int i = 0; i < snap.Length; i++)
+    {
+        char steamId[STEAMID64_LEN];
+        snap.GetKey(i, steamId, sizeof(steamId));
+
+        int data[MATCH_STAT_COUNT];
+        if (ExtractSnapshotForSteamId(steamId, data))
+        {
+            count++;
+        }
+    }
+    return count;
+}
+
 void RemoveSnapshotForSteamId(const char[] steamId)
 {
     if (!steamId[0] || g_DisconnectedStats == null)
@@ -1194,7 +1214,14 @@ void FinalizeCurrentMatch(bool shuttingDown)
         duration = 0;
     }
 
-    int participantCount = snap.Length;
+    int participantCount = CountValidMatchSnapshots(snap);
+    if (participantCount == 0)
+    {
+        delete snap;
+        ClearCurrentMatchTracking();
+        return;
+    }
+
     if (participantCount == 1)
     {
         delete snap;
