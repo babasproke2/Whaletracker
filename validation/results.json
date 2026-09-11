@@ -1,0 +1,51 @@
+{
+  "prepared_date": "2026-09-11",
+  "repository": "eltanschauung/Whaletracker",
+  "base_commit": "b167a6a3bc601f4e04d1f8a9efdf8e948742f3b2",
+  "offline": {
+    "repository": "whaletracker-rust",
+    "status": "passed",
+    "tests_run": 32,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "scope": "Python reference models and source contracts; installer fixtures and extracted cache SQL in SQLite; no Rust/SourcePawn compilation or MariaDB integration"
+  },
+  "parser_surrogate": {
+    "status": "passed",
+    "cases": 10023,
+    "accepted_valid_cases": 2746,
+    "sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "scope": "mechanically translated parser logic; NOT SourcePawn compilation"
+  },
+  "lexical_delimiters": {
+    "source_files_checked": 15,
+    "status": "passed",
+    "scope": "lexical balanced-delimiter check via Pygments; not syntax/type checking or compilation"
+  },
+  "native_rust_tests": {
+    "declared": 19,
+    "executed": false,
+    "reason": "Rust toolchain unavailable"
+  },
+  "rust_compilation": {
+    "performed": false,
+    "reason": "Rust toolchain unavailable"
+  },
+  "sourcepawn_compilation": {
+    "performed": false,
+    "reason": "SourcePawn toolchain unavailable"
+  },
+  "mysql_mariadb_integration": {
+    "performed": false
+  },
+  "tf2_integration": {
+    "performed": false
+  },
+  "performance_benchmarks": {
+    "performed": false
+  }
+}

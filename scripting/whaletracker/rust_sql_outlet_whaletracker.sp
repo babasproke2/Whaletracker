@@ -1,60 +1,62 @@
+/** Rust outlet: one session, one in-flight batch, FIFO retries and a local-write barrier.
+ * Requires the small, hash-checked helper patch in tools/apply_helpers.py.
+ * Runtime disconnects never assume that a missing ACK means SQL did not commit.
+ * See the combined report before hot-unloading with pending writes.
+ */
 #include <socket>
+#if !defined WT_CONCURRENCY_HELPERS
+    #error Run tools/apply_helpers.py in the pinned WhaleTracker checkout before compiling.
+#endif
 
-#if !defined WT_RUST_SQL_MAX_BATCH_JSON
 #define WT_RUST_SQL_MAX_BATCH_JSON 32768
-#endif
-#if !defined WT_RUST_SQL_MAX_RECV_BUFFER
-#define WT_RUST_SQL_MAX_RECV_BUFFER 32768
-#endif
-#if !defined WT_RUST_SQL_MAX_LINE
 #define WT_RUST_SQL_MAX_LINE 2048
-#endif
+#define WT_RUST_RECORD_JSON_MAX ((SAVE_QUERY_MAXLEN * 2) + 768)
+#define WT_RUST_CONNECT_TIMEOUT 10.0
+#define WT_RUST_ACK_TIMEOUT 45.0
+#define WT_RUST_FLUSH_INTERVAL 0.10
 
-#define WT_RUST_JSON_ESCAPE_PAIR_LEN 2
-#define WT_RUST_SQL_SOCKET_BUFFER_SIZE 65536
-#define WT_RUST_SQL_BYTE_WRAP 256
-#define WT_RUST_ASCII_CONTROL_LIMIT 32
-#define WT_RUST_ASCII_MAX 127
-#define WT_RUST_SQL_RECONNECT_DELAY 2.0
-#define WT_RUST_SQL_DEFAULT_PORT 28017
-#define WT_RUST_SQL_CALLBACKS_PER_FRAME 8
-#define WT_RUST_SQL_CONCATENATE_CALLBACKS 8192
-#define WT_RUST_SQL_FLUSH_INTERVAL 0.10
-#define WT_RUST_SQL_DROP_WARN_COOLDOWN 10
-#define WT_RUST_SQL_WRITE_JSON_OVERHEAD 64
-#define WT_RUST_SQL_BATCH_TRAILER_BYTES 4
+enum struct WTRustWrite
+{
+    char Query[SAVE_QUERY_MAXLEN];
+    char TypedFields[SAVE_QUERY_MAXLEN];
+    char EventId[192];
+    int UserId;
+}
 
-ConVar g_hRustSqlOutletEnabled = null;
-ConVar g_hRustSqlHost = null;
-ConVar g_hRustSqlPort = null;
-ConVar g_hRustSqlQueueMax = null;
-ConVar g_hRustSqlBatchMax = null;
-ConVar g_hRustSqlServerId = null;
-ConVar g_hRustSqlAuthToken = null;
-ConVar g_hRustSqlDebug = null;
-
+ConVar g_hRustSqlOutletEnabled;
+ConVar g_hRustSqlHost;
+ConVar g_hRustSqlPort;
+ConVar g_hRustSqlQueueMax;
+ConVar g_hRustSqlBatchMax;
+ConVar g_hRustSqlServerId;
+ConVar g_hRustSqlAuthToken;
+ConVar g_hRustSqlDebug;
 Socket g_hRustSqlSocket = null;
-bool g_bRustSqlConnecting = false;
-bool g_bRustSqlConnected = false;
-bool g_bRustSqlAwaitingAck = false;
-int g_iRustSqlNextBatchId = 1;
-int g_iRustSqlInflightBatchId = 0;
-int g_iRustSqlEventSessionId = 0;
-int g_iRustSqlNextEventId = 1;
 ArrayList g_hRustSqlQueue = null;
-ArrayList g_hRustSqlQueueUserIds = null;
-ArrayList g_hRustSqlQueueEventIds = null;
-ArrayList g_hRustSqlQueueTypedFields = null;
 ArrayList g_hRustSqlInflight = null;
-ArrayList g_hRustSqlInflightUserIds = null;
-ArrayList g_hRustSqlInflightEventIds = null;
-ArrayList g_hRustSqlInflightTypedFields = null;
 Handle g_hRustSqlFlushTimer = null;
 Handle g_hRustSqlReconnectTimer = null;
-char g_sRustSqlRecvBuffer[WT_RUST_SQL_MAX_RECV_BUFFER];
-int g_iRustSqlRecvBufferLen = 0;
-int g_iRustSqlDroppedWrites = 0;
-int g_iRustSqlDropWarnCooldownUntil = 0;
+bool g_bRustSqlConnecting;
+bool g_bRustSqlConnected;
+bool g_bRustSqlHelloReady;
+bool g_bRustSqlAwaitingAck;
+bool g_bRustSqlFlushQueued;
+bool g_bRustSqlChangingConfig;
+bool g_bRustSqlShutdownLocalFallback;
+bool g_bRustSqlDraining;
+int g_iRustSqlGeneration;
+int g_iRustSqlNextBatchId = 1;
+int g_iRustSqlInflightBatchId;
+int g_iRustSqlNextEventId = 1;
+char g_sRustSqlEventPrefix[96];
+char g_sRustSqlRecvBuffer[WT_RUST_SQL_MAX_LINE];
+int g_iRustSqlRecvBufferLen;
+float g_fRustSqlDeadline;
+float g_fRustSqlReconnectDelay = 2.0;
+float g_fRustSqlPressureLogAt;
+
+#include "rust_response_parser.sp"
+#include "rust_json.sp"
 
 bool WhaleTracker_RustSocketApiAvailable()
 {
@@ -63,198 +65,240 @@ bool WhaleTracker_RustSocketApiAvailable()
 
 bool WhaleTracker_UseRustSqlOutlet()
 {
-    return g_hRustSqlOutletEnabled != null && GetConVarBool(g_hRustSqlOutletEnabled) && WhaleTracker_RustSocketApiAvailable();
+    return g_hRustSqlOutletEnabled != null && g_hRustSqlOutletEnabled.BoolValue
+        && WhaleTracker_RustSocketApiAvailable();
 }
 
-bool WhaleTracker_RustSqlDebugEnabled()
+bool WhaleTracker_RustHasPendingWrites()
 {
-    return g_hRustSqlDebug != null && GetConVarBool(g_hRustSqlDebug);
+    return (g_hRustSqlQueue != null && g_hRustSqlQueue.Length > 0)
+        || (g_hRustSqlInflight != null && g_hRustSqlInflight.Length > 0);
 }
 
-bool WhaleTracker_RustSqlIsOnlineQuery(const char[] sql)
+// Called by the patched local save helpers. Unknown remote outcomes hold the
+// barrier until a matching success ACK, not merely until the socket disconnects.
+bool WhaleTracker_RustCanPumpLocal()
 {
-    return (StrContains(sql, "whaletracker_online") != -1 || StrContains(sql, "whaletracker_servers") != -1);
+    return g_bRustSqlShutdownLocalFallback || !WhaleTracker_RustHasPendingWrites();
 }
 
-void WhaleTracker_RustJsonEscape(const char[] input, char[] output, int maxlen)
+bool WhaleTracker_RustHasLocalWork()
 {
-    int outPos = 0;
-    for (int i = 0; input[i] != '\0' && outPos < maxlen - 1; i++)
-    {
-        char c = input[i];
-        int ci = c;
-        if (ci < 0) ci += WT_RUST_SQL_BYTE_WRAP;
-        if (ci == '"' || ci == '\\')
-        {
-            if (outPos + WT_RUST_JSON_ESCAPE_PAIR_LEN >= maxlen) break;
-            output[outPos++] = '\\';
-            output[outPos++] = c;
-            continue;
-        }
-        if (c == '\n' || c == '\r' || c == '\t')
-        {
-            if (outPos + WT_RUST_JSON_ESCAPE_PAIR_LEN >= maxlen) break;
-            output[outPos++] = '\\';
-            output[outPos++] = (c == '\n') ? 'n' : ((c == '\r') ? 'r' : 't');
-            continue;
-        }
-        if (c < WT_RUST_ASCII_CONTROL_LIMIT) continue;
-        if (c > WT_RUST_ASCII_MAX)
-        {
-            // Convert invalid/non-ASCII bytes to ASCII fallback to avoid invalid UTF-8 in Rust JSON transport.
-            if (outPos + 1 >= maxlen) break;
-            output[outPos++] = '?';
-            continue;
-        }
-        output[outPos++] = c;
-    }
-    output[outPos] = '\0';
-}
-
-void WhaleTracker_BuildRustServerId(char[] buffer, int maxlen)
-{
-    if (g_hRustSqlServerId != null)
-    {
-        g_hRustSqlServerId.GetString(buffer, maxlen);
-        TrimString(buffer);
-        if (buffer[0] != '\0') return;
-    }
-
-    char hostname[128];
-    ConVar cvarHostName = FindConVar("hostname");
-    if (cvarHostName != null) cvarHostName.GetString(hostname, sizeof(hostname));
-    else strcopy(hostname, sizeof(hostname), "unknown");
-
-    int port = 0;
-    ConVar cvarHostPort = FindConVar("hostport");
-    if (cvarHostPort != null) port = GetConVarInt(cvarHostPort);
-
-    FormatEx(buffer, maxlen, "%s:%d", hostname, port);
-}
-
-void WhaleTracker_BuildRustEventId(char[] buffer, int maxlen)
-{
-    char serverId[128];
-    WhaleTracker_BuildRustServerId(serverId, sizeof(serverId));
-    FormatEx(buffer, maxlen, "%s:%d:%d", serverId, g_iRustSqlEventSessionId, g_iRustSqlNextEventId++);
+    return g_PendingSaveQueries > 0 || (g_SaveQueue != null && g_SaveQueue.Length > 0);
 }
 
 void WhaleTracker_RustEnsureQueues()
 {
-    if (g_hRustSqlQueue == null) g_hRustSqlQueue = new ArrayList(ByteCountToCells(SAVE_QUERY_MAXLEN));
-    if (g_hRustSqlQueueUserIds == null) g_hRustSqlQueueUserIds = new ArrayList();
-    if (g_hRustSqlQueueEventIds == null) g_hRustSqlQueueEventIds = new ArrayList(ByteCountToCells(192));
-    if (g_hRustSqlQueueTypedFields == null) g_hRustSqlQueueTypedFields = new ArrayList(ByteCountToCells(SAVE_QUERY_MAXLEN));
-    if (g_hRustSqlInflight == null) g_hRustSqlInflight = new ArrayList(ByteCountToCells(SAVE_QUERY_MAXLEN));
-    if (g_hRustSqlInflightUserIds == null) g_hRustSqlInflightUserIds = new ArrayList();
-    if (g_hRustSqlInflightEventIds == null) g_hRustSqlInflightEventIds = new ArrayList(ByteCountToCells(192));
-    if (g_hRustSqlInflightTypedFields == null) g_hRustSqlInflightTypedFields = new ArrayList(ByteCountToCells(SAVE_QUERY_MAXLEN));
+    if (g_hRustSqlQueue == null) { g_hRustSqlQueue = new ArrayList(sizeof(WTRustWrite)); }
+    if (g_hRustSqlInflight == null) { g_hRustSqlInflight = new ArrayList(sizeof(WTRustWrite)); }
+}
+
+void WhaleTracker_RustCancelTimer(Handle &timer)
+{
+    Handle previous = timer;
+    timer = null;
+    delete previous;
+}
+
+void WhaleTracker_BuildRustServerId(char[] buffer, int maxlen)
+{
+    g_hRustSqlServerId.GetString(buffer, maxlen);
+    TrimString(buffer);
+    if (buffer[0]) { return; }
+    char hostname[96];
+    ConVar host = FindConVar("hostname");
+    if (host != null) { host.GetString(hostname, sizeof(hostname)); }
+    else { strcopy(hostname, sizeof(hostname), "unknown"); }
+    Format(buffer, maxlen, "%s:%d", hostname, g_iHostPort);
+}
+
+void WhaleTracker_RustNewEventPrefix()
+{
+    FormatEx(g_sRustSqlEventPrefix, sizeof(g_sRustSqlEventPrefix), "wt:%d:%d:%08x:%08x",
+        g_iHostPort, GetTime(), GetURandomInt(), GetURandomInt());
+    g_iRustSqlNextEventId = 1;
+}
+
+void WhaleTracker_BuildRustEventId(char[] buffer, int maxlen)
+{
+    if (!g_sRustSqlEventPrefix[0] || g_iRustSqlNextEventId >= 2147483647) { WhaleTracker_RustNewEventPrefix(); }
+    FormatEx(buffer, maxlen, "%s:%d", g_sRustSqlEventPrefix, g_iRustSqlNextEventId++);
+}
+
+public void WhaleTracker_RustInit()
+{
+    g_hRustSqlOutletEnabled = CreateConVar("sm_whaletracker_rust_sql_outlet", "1", "Enable Rust outlet; drain pending work before changing.", _, true, 0.0, true, 1.0);
+    g_hRustSqlHost = CreateConVar("sm_whaletracker_rust_host", "127.0.0.1", "Rust SQL outlet host");
+    g_hRustSqlPort = CreateConVar("sm_whaletracker_rust_port", "28017", "Rust SQL outlet port", _, true, 1.0, true, 65535.0);
+    g_hRustSqlQueueMax = CreateConVar("sm_whaletracker_rust_queue_max", "4096", "Maximum Rust-owned writes, including unacknowledged writes; overflow uses the ordered local queue.", _, true, 1.0, true, 65536.0);
+    g_hRustSqlBatchMax = CreateConVar("sm_whaletracker_rust_batch_max", "64", "Maximum writes per batch", _, true, 1.0, true, 256.0);
+    g_hRustSqlServerId = CreateConVar("sm_whaletracker_rust_server_id", "", "Optional hello identity");
+    g_hRustSqlAuthToken = CreateConVar("sm_whaletracker_rust_auth_token", "", "Shared secret; match literally", FCVAR_PROTECTED);
+    g_hRustSqlDebug = CreateConVar("sm_whaletracker_rust_sql_debug", "0", "Enable outlet transport diagnostics", _, true, 0.0, true, 1.0);
+    g_hRustSqlOutletEnabled.AddChangeHook(WhaleTracker_RustEndpointChanged);
+    g_hRustSqlHost.AddChangeHook(WhaleTracker_RustEndpointChanged);
+    g_hRustSqlPort.AddChangeHook(WhaleTracker_RustEndpointChanged);
+    g_hRustSqlAuthToken.AddChangeHook(WhaleTracker_RustEndpointChanged);
+    g_hRustSqlServerId.AddChangeHook(WhaleTracker_RustEndpointChanged);
+    RegAdminCmd("sm_wt_outlet_status", WhaleTracker_RustStatusCommand, ADMFLAG_ROOT, "Show Rust and local write ownership.");
+    RegAdminCmd("sm_wt_outlet_drain", WhaleTracker_RustDrainCommand, ADMFLAG_ROOT, "Stop new Rust admissions and drain pending batches; use 0 to resume.");
+    WhaleTracker_RustEnsureQueues();
+    WhaleTracker_RustNewEventPrefix();
+    WhaleTracker_RustCancelTimer(g_hRustSqlFlushTimer);
+    g_hRustSqlFlushTimer = CreateTimer(WT_RUST_FLUSH_INTERVAL, WhaleTracker_RustFlushTimer, _, TIMER_REPEAT);
+    WhaleTracker_RustConnectSocket();
+    // Do not modify Socket's global CallbacksPerFrame/ConcatenateCallbacks here;
+    // those settings are shared with unrelated plugins on the server.
+}
+
+public void WhaleTracker_RustEndpointChanged(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+    if (g_bRustSqlChangingConfig || StrEqual(oldValue, newValue)) { return; }
+    if (WhaleTracker_RustHasPendingWrites())
+    {
+        g_bRustSqlChangingConfig = true;
+        convar.SetString(oldValue);
+        g_bRustSqlChangingConfig = false;
+        LogError("[WhaleTracker] Drain Rust-owned writes before changing outlet endpoint, identity, auth, or enable state.");
+        return;
+    }
+    WhaleTracker_RustCancelTimer(g_hRustSqlReconnectTimer);
+    WhaleTracker_RustDisconnectSocket();
+    g_fRustSqlReconnectDelay = 2.0;
+    WhaleTracker_RustConnectSocket();
+}
+
+public Action WhaleTracker_RustStatusCommand(int client, int args)
+{
+    ReplyToCommand(client, "Rust: queued=%d inflight=%d batch=%d hello=%d draining=%d; local: queued=%d executing=%d",
+        g_hRustSqlQueue.Length, g_hRustSqlInflight.Length, g_iRustSqlInflightBatchId,
+        g_bRustSqlHelloReady, g_bRustSqlDraining, g_SaveQueue != null ? g_SaveQueue.Length : 0, g_PendingSaveQueries);
+    return Plugin_Handled;
+}
+
+public Action WhaleTracker_RustDrainCommand(int client, int args)
+{
+    char arg[8];
+    if (args > 0) { GetCmdArg(1, arg, sizeof(arg)); }
+    g_bRustSqlDraining = args == 0 || StringToInt(arg) != 0;
+    ReplyToCommand(client, "Rust admissions %s; existing work retains ownership until acknowledged.", g_bRustSqlDraining ? "paused" : "resumed");
+    return Plugin_Handled;
+}
+
+public bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync)
+{
+    return WhaleTracker_RustQueueWrite(query, "", userId, forceSync);
+}
+
+public bool WhaleTracker_RustQueueTypedWrite(const char[] query, const char[] fieldsJson, int userId, bool forceSync)
+{
+    if (!fieldsJson[0]) { return false; }
+    return WhaleTracker_RustQueueWrite(query, fieldsJson, userId, forceSync);
+}
+
+bool WhaleTracker_RustQueueWrite(const char[] query, const char[] fieldsJson, int userId, bool forceSync)
+{
+    if (!WhaleTracker_UseRustSqlOutlet() || g_bRustSqlDraining || forceSync || g_bShuttingDown
+        || WhaleTracker_RustHasLocalWork()) { return false; }
+    // Fresh work can use the legacy local queue when no remote writes own a
+    // barrier. Otherwise retain it behind the uncertain remote writes.
+    if ((!g_bRustSqlConnected || !g_bRustSqlHelloReady) && !WhaleTracker_RustHasPendingWrites()) { return false; }
+    WhaleTracker_RustEnsureQueues();
+    if (!query[0] || strlen(query) >= SAVE_QUERY_MAXLEN || strlen(fieldsJson) >= SAVE_QUERY_MAXLEN) { return false; }
+    int owned = g_hRustSqlQueue.Length + g_hRustSqlInflight.Length;
+    if (owned >= g_hRustSqlQueueMax.IntValue)
+    {
+        if (GetEngineTime() >= g_fRustSqlPressureLogAt)
+        {
+            LogError("[WhaleTracker] Rust capacity reached; new work deferred to the local queue behind the remote barrier.");
+            g_fRustSqlPressureLogAt = GetEngineTime() + 10.0;
+        }
+        return false; // The patched caller queues locally WITHOUT overtaking us.
+    }
+    WTRustWrite record;
+    strcopy(record.Query, sizeof(record.Query), query);
+    strcopy(record.TypedFields, sizeof(record.TypedFields), fieldsJson);
+    record.UserId = userId;
+    WhaleTracker_BuildRustEventId(record.EventId, sizeof(record.EventId));
+    g_hRustSqlQueue.PushArray(record);
+    // The periodic/coalesced flush collects a burst rather than sending one TCP
+    // batch for every synchronous gameplay callback.
+    return true;
 }
 
 void WhaleTracker_RustClearInflight()
 {
-    if (g_hRustSqlInflight != null) g_hRustSqlInflight.Clear();
-    if (g_hRustSqlInflightUserIds != null) g_hRustSqlInflightUserIds.Clear();
-    if (g_hRustSqlInflightEventIds != null) g_hRustSqlInflightEventIds.Clear();
-    if (g_hRustSqlInflightTypedFields != null) g_hRustSqlInflightTypedFields.Clear();
+    g_bRustSqlAwaitingAck = false;
     g_iRustSqlInflightBatchId = 0;
+    if (g_hRustSqlInflight != null) { g_hRustSqlInflight.Clear(); }
 }
 
 void WhaleTracker_RustRequeueInflight()
 {
-    if (g_hRustSqlInflight == null || g_hRustSqlInflightUserIds == null || g_hRustSqlInflightEventIds == null || g_hRustSqlInflightTypedFields == null || g_hRustSqlInflight.Length <= 0) return;
-    WhaleTracker_RustEnsureQueues();
-
-    char sql[SAVE_QUERY_MAXLEN];
-    char eventId[192];
-    char typedFields[SAVE_QUERY_MAXLEN];
-    for (int i = 0; i < g_hRustSqlInflight.Length; i++)
+    g_bRustSqlAwaitingAck = false;
+    g_iRustSqlInflightBatchId = 0;
+    if (g_hRustSqlInflight == null || g_hRustSqlInflight.Length == 0) { return; }
+    int prefix = g_hRustSqlInflight.Length;
+    int queued = g_hRustSqlQueue.Length;
+    g_hRustSqlQueue.Resize(queued + prefix);
+    WTRustWrite record;
+    for (int i = queued - 1; i >= 0; i--)
     {
-        g_hRustSqlInflight.GetString(i, sql, sizeof(sql));
-        g_hRustSqlInflightEventIds.GetString(i, eventId, sizeof(eventId));
-        g_hRustSqlInflightTypedFields.GetString(i, typedFields, sizeof(typedFields));
-        g_hRustSqlQueue.PushString(sql);
-        g_hRustSqlQueueUserIds.Push(g_hRustSqlInflightUserIds.Get(i));
-        g_hRustSqlQueueEventIds.PushString(eventId);
-        g_hRustSqlQueueTypedFields.PushString(typedFields);
+        g_hRustSqlQueue.GetArray(i, record);
+        g_hRustSqlQueue.SetArray(i + prefix, record);
     }
-    WhaleTracker_RustClearInflight();
-}
-
-void WhaleTracker_RustFlushPendingToLocal(bool forceSync = false)
-{
-    WhaleTracker_RustRequeueInflight();
-    if (g_hRustSqlQueue == null || g_hRustSqlQueueUserIds == null || g_hRustSqlQueueEventIds == null || g_hRustSqlQueueTypedFields == null) return;
-
-    char sql[SAVE_QUERY_MAXLEN];
-    while (g_hRustSqlQueue.Length > 0)
+    for (int i = 0; i < prefix; i++)
     {
-        g_hRustSqlQueue.GetString(0, sql, sizeof(sql));
-        int userId = g_hRustSqlQueueUserIds.Get(0);
-        g_hRustSqlQueue.Erase(0);
-        g_hRustSqlQueueUserIds.Erase(0);
-        g_hRustSqlQueueEventIds.Erase(0);
-        g_hRustSqlQueueTypedFields.Erase(0);
-        QueueLocalSaveQuery(sql, userId, forceSync);
+        g_hRustSqlInflight.GetArray(i, record);
+        g_hRustSqlQueue.SetArray(i, record);
     }
-}
-
-void WhaleTracker_RustScheduleReconnect()
-{
-    if (!WhaleTracker_UseRustSqlOutlet() || g_hRustSqlReconnectTimer != null) return;
-    g_hRustSqlReconnectTimer = CreateTimer(WT_RUST_SQL_RECONNECT_DELAY, WhaleTracker_RustReconnectTimer);
+    g_hRustSqlInflight.Clear();
 }
 
 void WhaleTracker_RustDisconnectSocket()
 {
-    g_bRustSqlConnected = false;
+    WhaleTracker_RustRequeueInflight();
+    g_iRustSqlGeneration++;
     g_bRustSqlConnecting = false;
-    g_bRustSqlAwaitingAck = false;
+    g_bRustSqlConnected = false;
+    g_bRustSqlHelloReady = false;
+    g_bRustSqlFlushQueued = false;
+    g_fRustSqlDeadline = 0.0;
     g_iRustSqlRecvBufferLen = 0;
-    g_sRustSqlRecvBuffer[0] = '\0';
-    if (g_hRustSqlSocket != null)
-    {
-        CloseHandle(g_hRustSqlSocket);
-        g_hRustSqlSocket = null;
-    }
+    Socket previous = g_hRustSqlSocket;
+    g_hRustSqlSocket = null;
+    delete previous;
+}
+
+void WhaleTracker_RustScheduleReconnect()
+{
+    if (g_bShuttingDown || !WhaleTracker_UseRustSqlOutlet() || g_hRustSqlReconnectTimer != null) { return; }
+    g_hRustSqlReconnectTimer = CreateTimer(g_fRustSqlReconnectDelay + GetRandomFloat(0.0, 1.0), WhaleTracker_RustReconnectTimer);
+    g_fRustSqlReconnectDelay *= 2.0;
+    if (g_fRustSqlReconnectDelay > 30.0) { g_fRustSqlReconnectDelay = 30.0; }
 }
 
 void WhaleTracker_RustConnectSocket()
 {
-    if (!WhaleTracker_UseRustSqlOutlet() || g_bRustSqlConnected || g_bRustSqlConnecting) return;
-    if (g_hRustSqlReconnectTimer != null)
-    {
-        CloseHandle(g_hRustSqlReconnectTimer);
-        g_hRustSqlReconnectTimer = null;
-    }
-
-    WhaleTracker_RustEnsureQueues();
+    if (g_bShuttingDown || !WhaleTracker_UseRustSqlOutlet() || g_bRustSqlConnecting || g_bRustSqlConnected
+        || g_hRustSqlReconnectTimer != null) { return; }
     WhaleTracker_RustDisconnectSocket();
-
-    char host[128], portStr[16];
+    char host[128];
     g_hRustSqlHost.GetString(host, sizeof(host));
-    g_hRustSqlPort.GetString(portStr, sizeof(portStr));
-    int port = StringToInt(portStr);
-    if (port <= 0) port = WT_RUST_SQL_DEFAULT_PORT;
-
     g_hRustSqlSocket = new Socket(SOCKET_TCP, WhaleTracker_RustOnSocketError);
-    if (g_hRustSqlSocket == null)
-    {
-        LogError("[WhaleTracker] Failed to create Rust SQL outlet socket");
-        WhaleTracker_RustScheduleReconnect();
-        return;
-    }
-
+    if (g_hRustSqlSocket == null) { WhaleTracker_RustScheduleReconnect(); return; }
     g_hRustSqlSocket.SetOption(SocketKeepAlive, 1);
-    g_hRustSqlSocket.SetOption(SocketSendBuffer, WT_RUST_SQL_SOCKET_BUFFER_SIZE);
-    g_hRustSqlSocket.SetOption(SocketReceiveBuffer, WT_RUST_SQL_SOCKET_BUFFER_SIZE);
+    g_hRustSqlSocket.SetOption(SocketSendBuffer, 65536);
+    g_hRustSqlSocket.SetOption(SocketReceiveBuffer, 65536);
     g_bRustSqlConnecting = true;
-    LogMessage("[WhaleTracker] Rust SQL outlet connecting to %s:%d", host, port);
-    g_hRustSqlSocket.Connect(WhaleTracker_RustOnSocketConnected, WhaleTracker_RustOnSocketReceive, WhaleTracker_RustOnSocketDisconnected, host, port);
+    g_fRustSqlDeadline = GetEngineTime() + WT_RUST_CONNECT_TIMEOUT;
+    g_hRustSqlSocket.Connect(WhaleTracker_RustOnSocketConnected, WhaleTracker_RustOnSocketReceive,
+        WhaleTracker_RustOnSocketDisconnected, host, g_hRustSqlPort.IntValue);
 }
 
 public Action WhaleTracker_RustReconnectTimer(Handle timer, any data)
 {
+    if (timer != g_hRustSqlReconnectTimer) { return Plugin_Stop; }
     g_hRustSqlReconnectTimer = null;
     WhaleTracker_RustConnectSocket();
     return Plugin_Stop;
@@ -262,399 +306,205 @@ public Action WhaleTracker_RustReconnectTimer(Handle timer, any data)
 
 public Action WhaleTracker_RustFlushTimer(Handle timer, any data)
 {
+    if (timer != g_hRustSqlFlushTimer) { return Plugin_Stop; }
+    if (g_fRustSqlDeadline > 0.0 && GetEngineTime() >= g_fRustSqlDeadline)
+    {
+        LogError("[WhaleTracker] Rust handshake/ACK timeout; retaining stable IDs for retry.");
+        WhaleTracker_RustDisconnectSocket();
+        WhaleTracker_RustScheduleReconnect();
+    }
     WhaleTracker_RustFlushSqlBatch();
     return Plugin_Continue;
 }
 
-public void WhaleTracker_RustInit()
+public void WhaleTracker_RustOnSocketConnected(Socket socket, any data)
 {
-    g_hRustSqlOutletEnabled = CreateConVar("sm_whaletracker_rust_sql_outlet", "1", "Send WhaleTracker SQL writes to Rust TCP outlet (1=yes, 0=local DB writes only)");
-    g_hRustSqlHost = CreateConVar("sm_whaletracker_rust_host", "127.0.0.1", "Rust SQL outlet host");
-    g_hRustSqlPort = CreateConVar("sm_whaletracker_rust_port", "28017", "Rust SQL outlet TCP port");
-    g_hRustSqlQueueMax = CreateConVar("sm_whaletracker_rust_queue_max", "4096", "Max queued SQL writes for Rust outlet before dropping oldest");
-    g_hRustSqlBatchMax = CreateConVar("sm_whaletracker_rust_batch_max", "64", "Max SQL writes per Rust outlet batch");
-    g_hRustSqlServerId = CreateConVar("sm_whaletracker_rust_server_id", "", "Optional server identifier for Rust SQL outlet hello");
-    g_hRustSqlAuthToken = CreateConVar("sm_whaletracker_rust_auth_token", "", "Optional shared secret for Rust SQL outlet hello auth", FCVAR_PROTECTED);
-    g_hRustSqlDebug = CreateConVar("sm_whaletracker_rust_sql_debug", "0", "Enable verbose Rust SQL outlet debug logging (1=yes, 0=no)");
-
-    if (g_iRustSqlEventSessionId <= 0) g_iRustSqlEventSessionId = GetTime();
-    WhaleTracker_RustEnsureQueues();
-    WhaleTracker_RustClearInflight();
-    if (WhaleTracker_RustSocketApiAvailable())
-    {
-        view_as<Socket>(null).SetOption(CallbacksPerFrame, WT_RUST_SQL_CALLBACKS_PER_FRAME);
-        view_as<Socket>(null).SetOption(ConcatenateCallbacks, WT_RUST_SQL_CONCATENATE_CALLBACKS);
-    }
-    if (g_hRustSqlFlushTimer != null) CloseHandle(g_hRustSqlFlushTimer);
-    g_hRustSqlFlushTimer = CreateTimer(WT_RUST_SQL_FLUSH_INTERVAL, WhaleTracker_RustFlushTimer, _, TIMER_REPEAT);
-    LogMessage("[WhaleTracker] Rust SQL outlet init: enabled=%d socket_api=%d", GetConVarBool(g_hRustSqlOutletEnabled) ? 1 : 0, WhaleTracker_RustSocketApiAvailable() ? 1 : 0);
-    WhaleTracker_RustConnectSocket();
-}
-
-public void WhaleTracker_RustShutdown()
-{
-    WhaleTracker_RustFlushSqlBatch();
-    WhaleTracker_RustFlushPendingToLocal(true);
-    WhaleTracker_RustDisconnectSocket();
-    if (g_hRustSqlFlushTimer != null) { CloseHandle(g_hRustSqlFlushTimer); g_hRustSqlFlushTimer = null; }
-    if (g_hRustSqlReconnectTimer != null) { CloseHandle(g_hRustSqlReconnectTimer); g_hRustSqlReconnectTimer = null; }
-}
-
-public bool WhaleTracker_RustQueueSqlWrite(const char[] query, int userId, bool forceSync)
-{
-    if (!WhaleTracker_UseRustSqlOutlet()) return false;
-    if (forceSync || g_bShuttingDown)
-    {
-        if (WhaleTracker_RustSqlIsOnlineQuery(query))
-        {
-            if (WhaleTracker_RustSqlDebugEnabled())
-                LogMessage("[WhaleTracker] Rust SQL outlet bypassed online query (forceSync=%d shuttingDown=%d): %s", forceSync ? 1 : 0, g_bShuttingDown ? 1 : 0, query);
-        }
-        return false;
-    }
-    if (!g_bRustSqlConnected || g_hRustSqlSocket == null)
-    {
-        return false;
-    }
-
-    WhaleTracker_RustEnsureQueues();
-    int queueMax = GetConVarInt(g_hRustSqlQueueMax);
-    if (queueMax < 1) queueMax = 1;
-    while (g_hRustSqlQueue.Length >= queueMax && g_hRustSqlQueue.Length > 0)
-    {
-        g_hRustSqlQueue.Erase(0);
-        g_hRustSqlQueueUserIds.Erase(0);
-        g_hRustSqlQueueEventIds.Erase(0);
-        g_hRustSqlQueueTypedFields.Erase(0);
-        g_iRustSqlDroppedWrites++;
-    }
-
-    if (g_iRustSqlDroppedWrites > 0)
-    {
-        int now = GetTime();
-        if (now >= g_iRustSqlDropWarnCooldownUntil)
-        {
-            g_iRustSqlDropWarnCooldownUntil = now + WT_RUST_SQL_DROP_WARN_COOLDOWN;
-            LogError("[WhaleTracker] Dropped %d Rust SQL outlet writes due to queue pressure", g_iRustSqlDroppedWrites);
-            g_iRustSqlDroppedWrites = 0;
-        }
-    }
-
-    char eventId[192];
-    WhaleTracker_BuildRustEventId(eventId, sizeof(eventId));
-    g_hRustSqlQueue.PushString(query);
-    g_hRustSqlQueueUserIds.Push(userId);
-    g_hRustSqlQueueEventIds.PushString(eventId);
-    g_hRustSqlQueueTypedFields.PushString("");
-    if (WhaleTracker_RustSqlIsOnlineQuery(query))
-    {
-        if (WhaleTracker_RustSqlDebugEnabled())
-            LogMessage("[WhaleTracker] Rust SQL queued online query (queue=%d user=%d connected=%d awaiting_ack=%d): %s",
-                g_hRustSqlQueue.Length,
-                userId,
-                g_bRustSqlConnected ? 1 : 0,
-                g_bRustSqlAwaitingAck ? 1 : 0,
-                query);
-    }
-    WhaleTracker_RustFlushSqlBatch();
-    return true;
-}
-
-public bool WhaleTracker_RustQueueTypedWrite(const char[] fallbackQuery, const char[] fieldsJson, int userId, bool forceSync)
-{
-    if (!WhaleTracker_UseRustSqlOutlet() || fieldsJson[0] == '\0') return false;
-    if (forceSync || g_bShuttingDown) return false;
-    if (!g_bRustSqlConnected || g_hRustSqlSocket == null) return false;
-
-    WhaleTracker_RustEnsureQueues();
-    int queueMax = GetConVarInt(g_hRustSqlQueueMax);
-    if (queueMax < 1) queueMax = 1;
-    while (g_hRustSqlQueue.Length >= queueMax && g_hRustSqlQueue.Length > 0)
-    {
-        g_hRustSqlQueue.Erase(0);
-        g_hRustSqlQueueUserIds.Erase(0);
-        g_hRustSqlQueueEventIds.Erase(0);
-        g_hRustSqlQueueTypedFields.Erase(0);
-        g_iRustSqlDroppedWrites++;
-    }
-
-    if (g_iRustSqlDroppedWrites > 0)
-    {
-        int now = GetTime();
-        if (now >= g_iRustSqlDropWarnCooldownUntil)
-        {
-            g_iRustSqlDropWarnCooldownUntil = now + WT_RUST_SQL_DROP_WARN_COOLDOWN;
-            LogError("[WhaleTracker] Dropped %d Rust SQL outlet writes due to queue pressure", g_iRustSqlDroppedWrites);
-            g_iRustSqlDroppedWrites = 0;
-        }
-    }
-
-    char eventId[192];
-    WhaleTracker_BuildRustEventId(eventId, sizeof(eventId));
-    g_hRustSqlQueue.PushString(fallbackQuery);
-    g_hRustSqlQueueUserIds.Push(userId);
-    g_hRustSqlQueueEventIds.PushString(eventId);
-    g_hRustSqlQueueTypedFields.PushString(fieldsJson);
-
-    if (WhaleTracker_RustSqlDebugEnabled())
-        LogMessage("[WhaleTracker] Rust SQL queued typed write (queue=%d user=%d connected=%d awaiting_ack=%d): %s",
-            g_hRustSqlQueue.Length,
-            userId,
-            g_bRustSqlConnected ? 1 : 0,
-            g_bRustSqlAwaitingAck ? 1 : 0,
-            fieldsJson);
-
-    WhaleTracker_RustFlushSqlBatch();
-    return true;
-}
-
-public void WhaleTracker_RustFlushSqlBatch()
-{
-    if (!WhaleTracker_UseRustSqlOutlet() || !g_bRustSqlConnected || g_hRustSqlSocket == null || g_bRustSqlAwaitingAck) return;
-    if (g_hRustSqlQueue == null || g_hRustSqlQueueUserIds == null || g_hRustSqlQueueEventIds == null || g_hRustSqlQueueTypedFields == null || g_hRustSqlQueue.Length <= 0) return;
-
-    char out[WT_RUST_SQL_MAX_BATCH_JSON];
-    int pos = 0;
-    int batchId = g_iRustSqlNextBatchId++;
-    pos += FormatEx(out[pos], sizeof(out) - pos, "{\"type\":\"sql_batch\",\"batch_id\":%d,\"sent_at\":%d,\"writes\":[", batchId, GetTime());
-
-    int batchMax = GetConVarInt(g_hRustSqlBatchMax);
-    if (batchMax < 1) batchMax = 1;
-    WhaleTracker_RustClearInflight();
-
-    char sql[SAVE_QUERY_MAXLEN];
-    char escaped[(SAVE_QUERY_MAXLEN * 2) + 1];
-    char eventId[192];
-    char escapedEventId[385];
-    char typedFields[SAVE_QUERY_MAXLEN];
-    int sentCount = 0;
-    for (int i = 0; i < g_hRustSqlQueue.Length && sentCount < batchMax; i++)
-    {
-        g_hRustSqlQueue.GetString(i, sql, sizeof(sql));
-        g_hRustSqlQueueEventIds.GetString(i, eventId, sizeof(eventId));
-        g_hRustSqlQueueTypedFields.GetString(i, typedFields, sizeof(typedFields));
-        WhaleTracker_RustJsonEscape(sql, escaped, sizeof(escaped));
-        WhaleTracker_RustJsonEscape(eventId, escapedEventId, sizeof(escapedEventId));
-        int userId = g_hRustSqlQueueUserIds.Get(i);
-        int estimated = ((typedFields[0] != '\0') ? strlen(typedFields) : strlen(escaped)) + strlen(escapedEventId) + WT_RUST_SQL_WRITE_JSON_OVERHEAD + (sentCount > 0 ? 1 : 0);
-        if (pos + estimated + WT_RUST_SQL_BATCH_TRAILER_BYTES >= sizeof(out)) break;
-        if (sentCount > 0) { out[pos++] = ','; out[pos] = '\0'; }
-        if (typedFields[0] != '\0')
-        {
-            pos += FormatEx(out[pos], sizeof(out) - pos, "{\"event_id\":\"%s\",\"user_id\":%d,%s}", escapedEventId, userId, typedFields);
-        }
-        else
-        {
-            pos += FormatEx(out[pos], sizeof(out) - pos, "{\"sql\":\"%s\",\"user_id\":%d,\"event_id\":\"%s\"}", escaped, userId, escapedEventId);
-        }
-        g_hRustSqlInflight.PushString(sql);
-        g_hRustSqlInflightUserIds.Push(userId);
-        g_hRustSqlInflightEventIds.PushString(eventId);
-        g_hRustSqlInflightTypedFields.PushString(typedFields);
-        sentCount++;
-    }
-    if (sentCount <= 0) { WhaleTracker_RustClearInflight(); return; }
-    pos += FormatEx(out[pos], sizeof(out) - pos, "]}\n");
-
-    g_iRustSqlInflightBatchId = batchId;
-    g_hRustSqlSocket.Send(out, pos);
-    g_hRustSqlSocket.SetSendqueueEmptyCallback(WhaleTracker_RustOnSocketSendqueueEmpty);
-    g_bRustSqlAwaitingAck = true;
-    if (WhaleTracker_RustSqlDebugEnabled())
-        LogMessage("[WhaleTracker] Rust SQL sent batch id=%d writes=%d bytes=%d queue_remaining=%d", batchId, sentCount, pos, g_hRustSqlQueue.Length - sentCount);
-
-    for (int i = 0; i < sentCount; i++)
-    {
-        g_hRustSqlQueue.Erase(0);
-        g_hRustSqlQueueUserIds.Erase(0);
-        g_hRustSqlQueueEventIds.Erase(0);
-        g_hRustSqlQueueTypedFields.Erase(0);
-    }
-}
-
-public void WhaleTracker_RustOnSocketConnected(Socket socket, any arg)
-{
+    if (socket != g_hRustSqlSocket || !g_bRustSqlConnecting) { return; }
     g_bRustSqlConnecting = false;
     g_bRustSqlConnected = true;
-    g_bRustSqlAwaitingAck = false;
-    g_iRustSqlRecvBufferLen = 0;
-    g_sRustSqlRecvBuffer[0] = '\0';
-
-    char serverId[128], escapedServerId[256], authToken[192], escapedAuthToken[384], authJson[448], hello[1024];
+    g_fRustSqlDeadline = GetEngineTime() + WT_RUST_CONNECT_TIMEOUT;
+    if (g_hRustSqlDebug.BoolValue)
+    {
+        LogMessage("[WhaleTracker] Rust outlet connected; waiting for hello acknowledgement.");
+    }
+    char serverId[128], escapedServer[257], auth[192], escapedAuth[385], hello[1024];
     WhaleTracker_BuildRustServerId(serverId, sizeof(serverId));
-    WhaleTracker_RustJsonEscape(serverId, escapedServerId, sizeof(escapedServerId));
-    authJson[0] = '\0';
-    if (g_hRustSqlAuthToken != null)
+    g_hRustSqlAuthToken.GetString(auth, sizeof(auth));
+    WhaleTracker_RustJsonEscape(serverId, escapedServer, sizeof(escapedServer));
+    WhaleTracker_RustJsonEscape(auth, escapedAuth, sizeof(escapedAuth));
+    int length = FormatEx(hello, sizeof(hello),
+        "{\"type\":\"hello\",\"service\":\"whaletracker_sql_outlet\",\"proto\":1,\"server_id\":\"%s\",\"auth\":\"%s\",\"ts\":%d}\n",
+        escapedServer, escapedAuth, GetTime());
+    socket.Send(hello, length);
+}
+
+public void WhaleTracker_RustOnSocketDisconnected(Socket socket, any data)
+{
+    if (socket != g_hRustSqlSocket) { return; }
+    WhaleTracker_RustDisconnectSocket();
+    WhaleTracker_RustScheduleReconnect();
+}
+
+public void WhaleTracker_RustOnSocketError(Socket socket, const int errorType, const int errorNum, any data)
+{
+    if (socket != g_hRustSqlSocket) { return; }
+    LogError("[WhaleTracker] Rust outlet socket error type=%d errno=%d; retained for retry", errorType, errorNum);
+    WhaleTracker_RustDisconnectSocket();
+    WhaleTracker_RustScheduleReconnect();
+}
+
+public void WhaleTracker_RustOnSocketReceive(Socket socket, const char[] bytes, const int length, any data)
+{
+    if (socket != g_hRustSqlSocket || length <= 0) { return; }
+    int generation = g_iRustSqlGeneration;
+    for (int i = 0; i < length; i++)
     {
-        g_hRustSqlAuthToken.GetString(authToken, sizeof(authToken));
-        if (authToken[0] != '\0')
+        if (socket != g_hRustSqlSocket || generation != g_iRustSqlGeneration) { return; }
+        if (bytes[i] == '\0' || g_iRustSqlRecvBufferLen >= sizeof(g_sRustSqlRecvBuffer) - 1)
         {
-            WhaleTracker_RustJsonEscape(authToken, escapedAuthToken, sizeof(escapedAuthToken));
-            FormatEx(authJson, sizeof(authJson), ",\"auth\":\"%s\"", escapedAuthToken);
+            WhaleTracker_RustProtocolFault();
+            return;
         }
-    }
-    int len = FormatEx(hello, sizeof(hello), "{\"type\":\"hello\",\"service\":\"whaletracker_sql_outlet\",\"proto\":1,\"server_id\":\"%s\",\"ts\":%d%s}\n", escapedServerId, GetTime(), authJson);
-    socket.Send(hello, len);
-    socket.SetSendqueueEmptyCallback(WhaleTracker_RustOnSocketSendqueueEmpty);
-    LogMessage("[WhaleTracker] Rust SQL outlet connected; hello sent (server_id=%s)", serverId);
-    WhaleTracker_RustFlushSqlBatch();
-}
-
-public void WhaleTracker_RustOnSocketDisconnected(Socket socket, any arg)
-{
-    LogMessage("[WhaleTracker] Rust SQL outlet disconnected; falling back to local DB for inflight=%d queued=%d",
-        (g_hRustSqlInflight != null) ? g_hRustSqlInflight.Length : 0,
-        (g_hRustSqlQueue != null) ? g_hRustSqlQueue.Length : 0);
-    WhaleTracker_RustFlushPendingToLocal();
-    WhaleTracker_RustDisconnectSocket();
-    WhaleTracker_RustScheduleReconnect();
-}
-
-public void WhaleTracker_RustOnSocketError(Socket socket, const int errorType, const int errorNum, any arg)
-{
-    LogError("[WhaleTracker] Rust SQL outlet socket error type=%d errno=%d", errorType, errorNum);
-    WhaleTracker_RustFlushPendingToLocal();
-    WhaleTracker_RustDisconnectSocket();
-    WhaleTracker_RustScheduleReconnect();
-}
-
-public void WhaleTracker_RustOnSocketSendqueueEmpty(Socket socket, any arg) {}
-
-public void WhaleTracker_RustOnSocketReceive(Socket socket, const char[] receiveData, const int dataSize, any arg)
-{
-    if (dataSize <= 0) return;
-    if (WhaleTracker_RustSqlDebugEnabled())
-        LogMessage("[WhaleTracker] Rust SQL outlet recv bytes=%d", dataSize);
-    if (g_iRustSqlRecvBufferLen + dataSize >= sizeof(g_sRustSqlRecvBuffer))
-    {
-        LogError("[WhaleTracker] Rust SQL outlet receive buffer overflow");
-        g_iRustSqlRecvBufferLen = 0;
-        g_sRustSqlRecvBuffer[0] = '\0';
-        return;
-    }
-
-    for (int i = 0; i < dataSize && g_iRustSqlRecvBufferLen < sizeof(g_sRustSqlRecvBuffer) - 1; i++)
-    {
-        g_sRustSqlRecvBuffer[g_iRustSqlRecvBufferLen++] = receiveData[i];
-    }
-    g_sRustSqlRecvBuffer[g_iRustSqlRecvBufferLen] = '\0';
-    WhaleTracker_RustParseIncomingLines();
-}
-
-void WhaleTracker_RustParseIncomingLines()
-{
-    int start = 0;
-    for (int i = 0; i < g_iRustSqlRecvBufferLen; i++)
-    {
-        if (g_sRustSqlRecvBuffer[i] != '\n') continue;
-        int lineLen = i - start;
-        if (lineLen > 0)
+        if (bytes[i] == '\n')
         {
             char line[WT_RUST_SQL_MAX_LINE];
-            if (lineLen >= sizeof(line)) lineLen = sizeof(line) - 1;
-            for (int j = 0; j < lineLen; j++) line[j] = g_sRustSqlRecvBuffer[start + j];
-            line[lineLen] = '\0';
-            WhaleTracker_RustHandleBackendLine(line);
+            g_sRustSqlRecvBuffer[g_iRustSqlRecvBufferLen] = '\0';
+            strcopy(line, sizeof(line), g_sRustSqlRecvBuffer);
+            g_iRustSqlRecvBufferLen = 0;
+            TrimString(line);
+            if (line[0]) { WhaleTracker_RustHandleBackendLine(line); }
         }
-        start = i + 1;
-    }
-    if (start > 0)
-    {
-        int remaining = g_iRustSqlRecvBufferLen - start;
-        for (int k = 0; k < remaining; k++) g_sRustSqlRecvBuffer[k] = g_sRustSqlRecvBuffer[start + k];
-        g_iRustSqlRecvBufferLen = remaining;
-        g_sRustSqlRecvBuffer[g_iRustSqlRecvBufferLen] = '\0';
+        else { g_sRustSqlRecvBuffer[g_iRustSqlRecvBufferLen++] = bytes[i]; }
     }
 }
 
-bool WhaleTracker_RustExtractIntField(const char[] line, const char[] field, int &value)
+void WhaleTracker_RustProtocolFault()
 {
-    char needle[64];
-    FormatEx(needle, sizeof(needle), "\"%s\":", field);
-
-    int pos = StrContains(line, needle);
-    if (pos == -1) return false;
-
-    pos += strlen(needle);
-    while (line[pos] == ' ' || line[pos] == '\t') pos++;
-
-    char number[16];
-    int numberLen = 0;
-    if (line[pos] == '-')
-    {
-        number[numberLen++] = line[pos++];
-    }
-
-    while (line[pos] >= '0' && line[pos] <= '9' && numberLen < sizeof(number) - 1)
-    {
-        number[numberLen++] = line[pos++];
-    }
-    number[numberLen] = '\0';
-
-    if (numberLen <= 0 || (numberLen == 1 && number[0] == '-')) return false;
-
-    value = StringToInt(number);
-    return true;
-}
-
-void WhaleTracker_RustHandleProtocolFault(const char[] reason, const char[] line)
-{
-    LogError("[WhaleTracker] Rust SQL outlet protocol fault (%s): inflight_batch=%d inflight=%d queued=%d line=%s",
-        reason,
-        g_iRustSqlInflightBatchId,
-        (g_hRustSqlInflight != null) ? g_hRustSqlInflight.Length : 0,
-        (g_hRustSqlQueue != null) ? g_hRustSqlQueue.Length : 0,
-        line);
-    WhaleTracker_RustFlushPendingToLocal();
+    LogError("[WhaleTracker] Rust protocol failure; no automatic local replay of uncertain writes.");
     WhaleTracker_RustDisconnectSocket();
     WhaleTracker_RustScheduleReconnect();
 }
 
 void WhaleTracker_RustHandleBackendLine(const char[] line)
 {
-    if (line[0] == '\0') return;
-    if (WhaleTracker_RustSqlDebugEnabled())
-        LogMessage("[WhaleTracker] Rust SQL outlet recv line: %s", line);
-    if (StrContains(line, "\"type\":\"ack\"") != -1)
+    WTRustResponse response;
+    if (!WTResponse_Parse(line, response)) { WhaleTracker_RustProtocolFault(); return; }
+    if (response.Kind == 1)
     {
-        int ackBatchId = 0;
-        if (!WhaleTracker_RustExtractIntField(line, "batch_id", ackBatchId))
+        if (!g_bRustSqlConnected || g_bRustSqlHelloReady) { return; }
+        g_bRustSqlHelloReady = true;
+        g_fRustSqlDeadline = 0.0;
+        WhaleTracker_RustRequestFlush();
+    }
+    else if (response.Kind == 2)
+    {
+        if (!g_bRustSqlAwaitingAck || !response.HasBatchId || response.BatchId != g_iRustSqlInflightBatchId) { return; }
+        if (!response.HasAccepted || !response.HasExecuted || !response.HasDbErrors || response.DbErrors != 0
+            || response.Accepted != response.Executed || response.Accepted > g_hRustSqlInflight.Length)
         {
-            WhaleTracker_RustHandleProtocolFault("ack missing batch_id", line);
+            WhaleTracker_RustProtocolFault();
             return;
         }
-        if (!g_bRustSqlAwaitingAck || g_iRustSqlInflightBatchId <= 0)
-        {
-            WhaleTracker_RustHandleProtocolFault("unexpected ack", line);
-            return;
-        }
-        if (ackBatchId != g_iRustSqlInflightBatchId)
-        {
-            WhaleTracker_RustHandleProtocolFault("ack batch_id mismatch", line);
-            return;
-        }
-
-        int dbErrors = 0;
-        if (WhaleTracker_RustExtractIntField(line, "db_errors", dbErrors) && dbErrors > 0)
-        {
-            WhaleTracker_RustHandleProtocolFault("ack reports db_errors", line);
-            return;
-        }
-
-        g_bRustSqlAwaitingAck = false;
-        if (WhaleTracker_RustSqlDebugEnabled())
-            LogMessage("[WhaleTracker] Rust SQL outlet ACK received batch_id=%d; inflight=%d queued=%d",
-                ackBatchId,
-                (g_hRustSqlInflight != null) ? g_hRustSqlInflight.Length : 0,
-                (g_hRustSqlQueue != null) ? g_hRustSqlQueue.Length : 0);
         WhaleTracker_RustClearInflight();
-        WhaleTracker_RustFlushSqlBatch();
-        return;
+        g_fRustSqlDeadline = 0.0;
+        g_fRustSqlReconnectDelay = 2.0;
+        if (!WhaleTracker_RustHasPendingWrites()) { RequestPumpSaveQueue(); }
+        WhaleTracker_RustRequestFlush();
     }
-    if (StrContains(line, "\"type\":\"error\"") != -1)
+    else if (response.Kind == 3)
     {
-        g_bRustSqlAwaitingAck = false;
-        WhaleTracker_RustHandleProtocolFault("backend error", line);
-        return;
+        if (response.HasBatchId && (!g_bRustSqlAwaitingAck || response.BatchId != g_iRustSqlInflightBatchId)) { return; }
+        WhaleTracker_RustProtocolFault();
     }
+}
+
+void WhaleTracker_RustRequestFlush()
+{
+    if (g_bRustSqlFlushQueued) { return; }
+    g_bRustSqlFlushQueued = true;
+    RequestFrame(WhaleTracker_RustFlushFrame, g_iRustSqlGeneration);
+}
+
+public void WhaleTracker_RustFlushFrame(any generation)
+{
+    if (generation != g_iRustSqlGeneration) { return; }
+    g_bRustSqlFlushQueued = false;
+    WhaleTracker_RustFlushSqlBatch();
+}
+
+public void WhaleTracker_RustFlushSqlBatch()
+{
+    if (g_bShuttingDown || !WhaleTracker_UseRustSqlOutlet() || g_bRustSqlAwaitingAck) { return; }
+    if (!g_bRustSqlConnected || !g_bRustSqlHelloReady || g_hRustSqlSocket == null) { WhaleTracker_RustConnectSocket(); return; }
+    if (g_hRustSqlQueue == null || g_hRustSqlQueue.Length == 0) { return; }
+    char output[WT_RUST_SQL_MAX_BATCH_JSON], encoded[WT_RUST_RECORD_JSON_MAX];
+    char sql[(SAVE_QUERY_MAXLEN * 2) + 1], eventId[385];
+    int batchId = g_iRustSqlNextBatchId++;
+    if (g_iRustSqlNextBatchId <= 0) { g_iRustSqlNextBatchId = 1; }
+    int position = FormatEx(output, sizeof(output), "{\"type\":\"sql_batch\",\"batch_id\":%d,\"sent_at\":%d,\"writes\":[", batchId, GetTime());
+    int count = 0;
+    WTRustWrite record;
+    for (int i = 0; i < g_hRustSqlQueue.Length && count < g_hRustSqlBatchMax.IntValue; i++)
+    {
+        g_hRustSqlQueue.GetArray(i, record);
+        WhaleTracker_RustJsonEscape(record.EventId, eventId, sizeof(eventId));
+        int length;
+        if (record.TypedFields[0])
+        {
+            length = FormatEx(encoded, sizeof(encoded), "{\"event_id\":\"%s\",\"user_id\":%d,%s}", eventId, record.UserId, record.TypedFields);
+        }
+        else
+        {
+            WhaleTracker_RustJsonEscape(record.Query, sql, sizeof(sql));
+            length = FormatEx(encoded, sizeof(encoded), "{\"sql\":\"%s\",\"user_id\":%d,\"event_id\":\"%s\"}", sql, record.UserId, eventId);
+        }
+        if (length <= 0 || length >= sizeof(encoded) - 1 || position + length + 5 >= sizeof(output)) { break; }
+        if (count > 0) { output[position++] = ','; }
+        strcopy(output[position], sizeof(output) - position, encoded);
+        position += length;
+        g_hRustSqlInflight.PushArray(record);
+        count++;
+    }
+    if (count == 0) { LogError("[WhaleTracker] Queue head cannot fit an outlet frame; retained, not silently truncated."); return; }
+    position += FormatEx(output[position], sizeof(output) - position, "]}\n");
+    int remaining = g_hRustSqlQueue.Length - count;
+    for (int i = 0; i < remaining; i++)
+    {
+        g_hRustSqlQueue.GetArray(i + count, record);
+        g_hRustSqlQueue.SetArray(i, record);
+    }
+    g_hRustSqlQueue.Resize(remaining);
+    g_iRustSqlInflightBatchId = batchId;
+    g_bRustSqlAwaitingAck = true;
+    g_fRustSqlDeadline = GetEngineTime() + WT_RUST_ACK_TIMEOUT;
+    // Ownership and queue removal precede any reentrant extension callback.
+    g_hRustSqlSocket.Send(output, position);
+}
+
+public void WhaleTracker_RustShutdown()
+{
+    WhaleTracker_RustCancelTimer(g_hRustSqlFlushTimer);
+    WhaleTracker_RustCancelTimer(g_hRustSqlReconnectTimer);
+    bool uncertain = g_bRustSqlAwaitingAck || WhaleTracker_RustHasPendingWrites();
+    WhaleTracker_RustDisconnectSocket();
+    if (uncertain)
+    {
+        LogError("[WhaleTracker] Unloading with remote-owned writes: legacy synchronous local fallback may duplicate/reorder remotely committed SQL. Drain first with sm_wt_outlet_drain and verify sm_wt_outlet_status.");
+    }
+    // Compatibility escape hatch ONLY at unload. There is no way to establish
+    // exactly-once handoff from raw SQL plus a missing ACK during plugin teardown.
+    g_bRustSqlShutdownLocalFallback = true;
+    WTRustWrite record;
+    if (g_hRustSqlQueue != null)
+    {
+        for (int i = 0; i < g_hRustSqlQueue.Length; i++)
+        {
+            g_hRustSqlQueue.GetArray(i, record);
+            QueueLocalSaveQuery(record.Query, record.UserId, true);
+        }
+    }
+    delete g_hRustSqlQueue;
+    delete g_hRustSqlInflight;
+    // Deferred local writes were enqueued after the remote writes.
+    FlushSaveQueueSync();
 }

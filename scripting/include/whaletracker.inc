@@ -1,3 +1,4 @@
+#define WT_CONCURRENCY_HELPERS 1
 #if defined _whaletracker_helpers_included
   #endinput
 #endif
@@ -683,6 +684,7 @@ void WhaleTracker_ScheduleReconnect(float delay)
 
 public Action WhaleTracker_ReconnectTimer(Handle timer, any data)
 {
+    if (timer != g_hReconnectTimer) { return Plugin_Stop; }
     if (timer == g_hReconnectTimer)
     {
         g_hReconnectTimer = null;
@@ -2322,6 +2324,11 @@ void MarkClientDirty(int client)
 
 void RunSaveQuerySync(const char[] query, int userId)
 {
+    if (!WhaleTracker_RustCanPumpLocal())
+    {
+        QueueLocalSaveQuery(query, userId, false);
+        return;
+    }
     if (GetSyncDatabaseHandle() == null)
     {
         WhaleTracker_ScheduleReconnect(1.0);
@@ -2351,6 +2358,7 @@ void RunSaveQuerySync(const char[] query, int userId)
 
 void PumpSaveQueue()
 {
+    if (!WhaleTracker_RustCanPumpLocal()) { return; }
     if (g_SaveQueue == null || g_hDatabase == null || !g_bDatabaseReady || g_bShuttingDown)
     {
         return;
@@ -2412,6 +2420,7 @@ void RequestPumpSaveQueue()
 
 public Action WhaleTracker_PumpSaveQueueTimer(Handle timer, any data)
 {
+    if (timer != g_hSavePumpTimer) { return Plugin_Stop; }
     if (timer == g_hSavePumpTimer)
     {
         g_hSavePumpTimer = null;
@@ -2423,6 +2432,7 @@ public Action WhaleTracker_PumpSaveQueueTimer(Handle timer, any data)
 
 void FlushSaveQueueSync()
 {
+    if (!WhaleTracker_RustCanPumpLocal()) { return; }
     if (g_SaveQueue == null)
     {
         return;
@@ -2447,7 +2457,7 @@ void FlushSaveQueueSync()
 
 void QueueLocalSaveQuery(const char[] query, int userId, bool forceSync = false)
 {
-    if (forceSync || g_bShuttingDown)
+    if ((forceSync || g_bShuttingDown) && WhaleTracker_RustCanPumpLocal())
     {
         RunSaveQuerySync(query, userId);
         return;

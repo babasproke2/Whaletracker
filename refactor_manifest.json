@@ -1,0 +1,139 @@
+{
+  "format_version": 1,
+  "package_type": "source_overlay",
+  "prepared_date": "2026-09-11",
+  "repository": "eltanschauung/Whaletracker",
+  "base_commit": "b167a6a3bc601f4e04d1f8a9efdf8e948742f3b2",
+  "schema_version": 5,
+  "required_install_command": "python3 tools/apply_helpers.py",
+  "required_original_helper_git_blob": "2475a5d5209e3bbb70d2a089ed93a4b0b2be8157",
+  "required_unchanged_files": [
+    "Cargo.lock",
+    "scripting/whaletracker.sp",
+    "scripting/include/whaletracker.inc",
+    "scripting/include/*",
+    "scripting/whaletracker/* except files present in this overlay",
+    "src/bin/frontend_metric_snapshot.rs"
+  ],
+  "archive_root": "original repository root; merge files without deleting unchanged directories",
+  "rust_minimum": "1.89",
+  "python_tools_minimum": "3.11",
+  "native_build_validated": false,
+  "notes_file": "WhaleTracker_and_plugin_statistics_refactor.md (delivered separately)",
+  "file_hash_algorithm": "SHA-256",
+  "manifest_self_excluded": true,
+  "files": [
+    {
+      "path": "Cargo.toml",
+      "bytes": 224,
+      "sha256": "2981617371fb1c249b56e316adef41681713319366bc0895968954025cbc0950"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "scripting/whaletracker/rust_json.sp",
+      "bytes": 1800,
+      "sha256": "da58c48eb7e529972b4c5133eb66e029f32e1875ff0cb071ab58f83a95e1017f"
+    },
+    {
+      "path": "scripting/whaletracker/rust_response_parser.sp",
+      "bytes": 6314,
+      "sha256": "ee0ed5d988018b75721d2c42462156a5df2d6ec47518927bc96dd5e8b9e6bc77"
+    },
+    {
+      "path": "scripting/whaletracker/rust_sql_outlet_whaletracker.sp",
+      "bytes": 21262,
+      "sha256": "f634709722e58c93f89062950441ecf9a75a88135550dafd5c63d0a23f45fe2b"
+    },
+    {
+      "path": "src/admission.rs",
+      "bytes": 7251,
+      "sha256": "1b7312d8dee0fe3531bd2f96fa49813bfe1bc5437c6ee92c73a11faa29d37cfc"
+    },
+    {
+      "path": "src/config.rs",
+      "bytes": 3939,
+      "sha256": "8c389b146157a57549e5c2d177558a42a47906c364b8f802e31fa98728b445f6"
+    },
+    {
+      "path": "src/database.rs",
+      "bytes": 3692,
+      "sha256": "f42d6fc8e5231bfd56335096aa0c619a31e478fd841820b415371c5f76c72ce7"
+    },
+    {
+      "path": "src/journal.rs",
+      "bytes": 15074,
+      "sha256": "9fa15b06da5c4567104de362ebea6887d947ee0c25b5366504f11914223daa0f"
+    },
+    {
+      "path": "src/journal_lock.rs",
+      "bytes": 1337,
+      "sha256": "8d2d4f87035e7e2651d4c4374e563dcbc45ae25c3386340d65d10619a1f8dd0d"
+    },
+    {
+      "path": "src/main.rs",
+      "bytes": 2770,
+      "sha256": "fcf0948da0fbc1f458e16d98239885fb67461678473a022d5729eff0c33b767e"
+    },
+    {
+      "path": "src/points_cache.rs",
+      "bytes": 8596,
+      "sha256": "78dc7f1d59e4d7916f02646c4b6448c17567dd3dace882eb359d88c57405ef70"
+    },
+    {
+      "path": "src/protocol.rs",
+      "bytes": 11221,
+      "sha256": "042ead20093b6adb0d04e23fa18dd3ff32dcdee25865b856c78085819cb267df"
+    },
+    {
+      "path": "src/runtime_limits.rs",
+      "bytes": 3357,
+      "sha256": "24c5472e6078232580d320c79e7f9b8caafd971da8872da5ded82bf94d6c0867"
+    },
+    {
+      "path": "src/schema.rs",
+      "bytes": 13495,
+      "sha256": "a75f3068bcdb91b3267fbc0f5b327c459178e6ca9a97b2191ae91c505b4bb075"
+    },
+    {
+      "path": "src/sink.rs",
+      "bytes": 11537,
+      "sha256": "5eec7323d23e7cae29f03864090881aa0ccd52768d7c18ed837410ec489b9982"
+    },
+    {
+      "path": "src/sql.rs",
+      "bytes": 12156,
+      "sha256": "d8ceef7b0c06760837e7d1e3c0c21379d2d7a4c4200fab77dc4036a5cefd9551"
+    },
+    {
+      "path": "tests/parser_harness.py",
+      "bytes": 6491,
+      "sha256": "fbfcc7629955b2e90cb5cf86bf83ee1ce11b6b45d18acf2229ab0c9f99978254"
+    },
+    {
+      "path": "tests/validate_offline.py",
+      "bytes": 16587,
+      "sha256": "97548dd95940c213118eb73284adfd15013c17adfc1cc70db534c589b3694e07"
+    },
+    {
+      "path": "tools/apply_helpers.py",
+      "bytes": 4119,
+      "sha256": "1aa6543ae4b4ed7d81e43cd0389c7e048a75a4c281a962a8e66a69ab001b562a"
+    },
+    {
+      "path": "tools/check_build.py",
+      "bytes": 3207,
+      "sha256": "768dcc39ff8af73ce6a4505f9b65387c1521d06da696195ced6aa8a61482d323"
+    },
+    {
+      "path": "validation/results.json",
+      "bytes": 1424,
+      "sha256": "03b847db88c8fd4fcfab516021ffb3fed422dcf52fec1c82f304f358c58d8eb5"
+    }
+  ],
+  "source_file_count": 15,
+  "payload_file_count": 22
+}
