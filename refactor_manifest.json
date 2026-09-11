@@ -35,8 +35,8 @@
     },
     {
       "path": "scripting/whaletracker/rust_json.sp",
-      "bytes": 1800,
-      "sha256": "da58c48eb7e529972b4c5133eb66e029f32e1875ff0cb071ab58f83a95e1017f"
+      "bytes": 1923,
+      "sha256": "e5500fda1d829ad2ae594656bc15204a2b05e8422c4a8c526e6bd7e8f5fe7282"
     },
     {
       "path": "scripting/whaletracker/rust_response_parser.sp",
@@ -45,68 +45,68 @@
     },
     {
       "path": "scripting/whaletracker/rust_sql_outlet_whaletracker.sp",
-      "bytes": 21262,
-      "sha256": "f634709722e58c93f89062950441ecf9a75a88135550dafd5c63d0a23f45fe2b"
+      "bytes": 21741,
+      "sha256": "a583732dcfd195afe64a16fe2bc1a2efe2f7f44526d216ce547ef64fd8fa0c4b"
     },
     {
       "path": "src/admission.rs",
-      "bytes": 7251,
-      "sha256": "1b7312d8dee0fe3531bd2f96fa49813bfe1bc5437c6ee92c73a11faa29d37cfc"
+      "bytes": 9285,
+      "sha256": "2f36ee6fec4b2c06aaa78131dc2e8c88b91c679b53d644ab0f008009e8f05bd3"
     },
     {
       "path": "src/config.rs",
-      "bytes": 3939,
-      "sha256": "8c389b146157a57549e5c2d177558a42a47906c364b8f802e31fa98728b445f6"
+      "bytes": 4310,
+      "sha256": "f215112b79bc351a1bbdfba03f3b27e9d26e30f5bb2399342680957a901be779"
     },
     {
       "path": "src/database.rs",
-      "bytes": 3692,
-      "sha256": "f42d6fc8e5231bfd56335096aa0c619a31e478fd841820b415371c5f76c72ce7"
+      "bytes": 3917,
+      "sha256": "428b1a1fac8f25046df927c2d039c339a9578802df97674da60529153b43993b"
     },
     {
       "path": "src/journal.rs",
-      "bytes": 15074,
-      "sha256": "9fa15b06da5c4567104de362ebea6887d947ee0c25b5366504f11914223daa0f"
+      "bytes": 17537,
+      "sha256": "c81d36d415c054d7c44f3656090d5058204977e2668ba72e57db7c00deeb5055"
     },
     {
       "path": "src/journal_lock.rs",
-      "bytes": 1337,
-      "sha256": "8d2d4f87035e7e2651d4c4374e563dcbc45ae25c3386340d65d10619a1f8dd0d"
+      "bytes": 1437,
+      "sha256": "73868f0a9dfc53ca9e9666cab4bcd472cec2488b32689d604a22a7c8b31a6f14"
     },
     {
       "path": "src/main.rs",
-      "bytes": 2770,
-      "sha256": "fcf0948da0fbc1f458e16d98239885fb67461678473a022d5729eff0c33b767e"
+      "bytes": 3281,
+      "sha256": "4f4b625e710ef85196d26ac34b6995b9ef56da8cdc299e4016e8505779085595"
     },
     {
       "path": "src/points_cache.rs",
-      "bytes": 8596,
-      "sha256": "78dc7f1d59e4d7916f02646c4b6448c17567dd3dace882eb359d88c57405ef70"
+      "bytes": 8723,
+      "sha256": "c7e6c776cb96a61f3694e4e34e7c4282193d131e718077f2f024e939a3fe6cfd"
     },
     {
       "path": "src/protocol.rs",
-      "bytes": 11221,
-      "sha256": "042ead20093b6adb0d04e23fa18dd3ff32dcdee25865b856c78085819cb267df"
+      "bytes": 14473,
+      "sha256": "6d73996243dcf03453bae179da5b44957ee58907fae2b462d3ee46ef54d13351"
     },
     {
       "path": "src/runtime_limits.rs",
-      "bytes": 3357,
-      "sha256": "24c5472e6078232580d320c79e7f9b8caafd971da8872da5ded82bf94d6c0867"
+      "bytes": 3524,
+      "sha256": "be882a52ad27782ec669c64dc94302cdd88f53f8bc98bd9715b7d49d0995dd62"
     },
     {
       "path": "src/schema.rs",
-      "bytes": 13495,
-      "sha256": "a75f3068bcdb91b3267fbc0f5b327c459178e6ca9a97b2191ae91c505b4bb075"
+      "bytes": 14604,
+      "sha256": "4c7b85a61b236d054c99b816d52f66a6a413420eb2bc88822a563b1fa281763f"
     },
     {
       "path": "src/sink.rs",
-      "bytes": 11537,
-      "sha256": "5eec7323d23e7cae29f03864090881aa0ccd52768d7c18ed837410ec489b9982"
+      "bytes": 13605,
+      "sha256": "86c8c5782d0b4c7ff742af14c7403e07a777c00ce9b496c11c093b822abd164e"
     },
     {
       "path": "src/sql.rs",
-      "bytes": 12156,
-      "sha256": "d8ceef7b0c06760837e7d1e3c0c21379d2d7a4c4200fab77dc4036a5cefd9551"
+      "bytes": 14127,
+      "sha256": "c271954c29f4d3753ef007e68fbd9161c5fbb21fc809612a32f6f4233c97efc6"
     },
     {
       "path": "tests/parser_harness.py",

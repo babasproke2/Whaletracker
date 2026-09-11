@@ -356,6 +356,11 @@ public void WhaleTracker_RustOnSocketError(Socket socket, const int errorType, c
 public void WhaleTracker_RustOnSocketReceive(Socket socket, const char[] bytes, const int length, any data)
 {
     if (socket != g_hRustSqlSocket || length <= 0) { return; }
+    if (g_hRustSqlDebug.BoolValue)
+    {
+        LogMessage("[WhaleTracker] Rust outlet received bytes=%d first=%d last=%d.",
+            length, view_as<int>(bytes[0]) & 0xFF, view_as<int>(bytes[length - 1]) & 0xFF);
+    }
     int generation = g_iRustSqlGeneration;
     for (int i = 0; i < length; i++)
     {
@@ -388,7 +393,13 @@ void WhaleTracker_RustProtocolFault()
 void WhaleTracker_RustHandleBackendLine(const char[] line)
 {
     WTRustResponse response;
-    if (!WTResponse_Parse(line, response)) { WhaleTracker_RustProtocolFault(); return; }
+    bool parsed = WTResponse_Parse(line, response);
+    if (g_hRustSqlDebug.BoolValue)
+    {
+        LogMessage("[WhaleTracker] Rust outlet parsed response=%d kind=%d bytes=%d.",
+            parsed, parsed ? response.Kind : 0, strlen(line));
+    }
+    if (!parsed) { WhaleTracker_RustProtocolFault(); return; }
     if (response.Kind == 1)
     {
         if (!g_bRustSqlConnected || g_bRustSqlHelloReady) { return; }

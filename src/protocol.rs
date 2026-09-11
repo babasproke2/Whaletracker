@@ -5,7 +5,7 @@ use crate::{
     runtime_limits::DeadlineStream,
     sink::SqlSink,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     io::{self, BufRead, BufReader, Write},
     net::TcpStream,
@@ -191,10 +191,7 @@ pub fn handle_client(stream: TcpStream, sink: Arc<SqlSink>, cfg: Config) -> io::
                         "[sql-sink] hello service={service:?} server_id={server_id:?} ts={ts:?}"
                     );
                 }
-                send_line(
-                    &mut writer,
-                    &serde_json::json!({"type":"hello_ack", "service":"whaletracker_sql_sink", "proto":1, "ts":now_secs()}),
-                )?;
+                send_line(&mut writer, &serde_json::json!({"type":"hello_ack"}))?;
             }
             Inbound::SqlBatch {
                 batch_id,
@@ -285,9 +282,33 @@ fn error(stream: &mut TcpStream, batch_id: Option<i64>, message: &str) -> io::Re
     )
 }
 
-fn send_line(stream: &mut TcpStream, message: &impl Serialize) -> io::Result<()> {
-    let mut bytes = serde_json::to_vec(message).map_err(io::Error::other)?;
-    bytes.push(b'\n');
+fn encode_line(message: &serde_json::Value) -> io::Result<Vec<u8>> {
+    let object = message
+        .as_object()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "response must be an object"))?;
+    let kind = object
+        .get("type")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "response type is required"))?;
+    let mut bytes = Vec::new();
+    bytes.push(b'{');
+    serde_json::to_writer(&mut bytes, "type").map_err(io::Error::other)?;
+    bytes.push(b':');
+    serde_json::to_writer(&mut bytes, kind).map_err(io::Error::other)?;
+    for (key, value) in object {
+        if key == "type" {
+            continue;
+        }
+        bytes.push(b',');
+        serde_json::to_writer(&mut bytes, key).map_err(io::Error::other)?;
+        bytes.push(b':');
+        serde_json::to_writer(&mut bytes, value).map_err(io::Error::other)?;
+    }
+    bytes.extend_from_slice(b"}\n");
+    Ok(bytes)
+}
+
+fn send_line(stream: &mut TcpStream, message: &serde_json::Value) -> io::Result<()> {
+    let bytes = encode_line(message)?;
     stream.write_all(&bytes)
 }
 
@@ -349,6 +370,12 @@ mod tests {
             FrameRead::TooLong
         );
         assert!(read_frame(&mut io::Cursor::new(b"partial"), 32, &mut out).is_err());
+    }
+    #[test]
+    fn responses_put_type_first_for_stable_sourcepawn_clients() {
+        let line =
+            encode_line(&serde_json::json!({"proto":1, "type":"hello_ack", "ts":7})).unwrap();
+        assert_eq!(line, b"{\"type\":\"hello_ack\",\"proto\":1,\"ts\":7}\n");
     }
     #[test]
     fn typed_write_and_limits_are_preserved() {

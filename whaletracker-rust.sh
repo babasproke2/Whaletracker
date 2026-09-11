@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-BIN="$ROOT_DIR/target/debug/whaletracker-rust"
+BIN="$ROOT_DIR/target/release/whaletracker-rust"
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/whaletracker-rust"
-PKILL_PATTERN='target/debug/whaletracker-rust'
+PKILL_PATTERN='target/(debug|release)/whaletracker-rust'
 
 mkdir -p "$LOG_DIR"
 chmod 700 "$LOG_DIR"

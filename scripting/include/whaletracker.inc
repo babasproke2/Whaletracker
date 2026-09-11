@@ -1765,7 +1765,7 @@ void InsertMatchLogRecord(int endTime, int duration, int participantCount, bool 
 
     int started = (g_iMatchStartTime > 0) ? g_iMatchStartTime : endTime;
 
-    char query[512];
+    char query[SAVE_QUERY_MAXLEN];
     Format(query, sizeof(query),
         "INSERT INTO whaletracker_logs "
         ... "(log_id, map, gamemode, started_at, ended_at, duration, player_count, created_at, updated_at) "
